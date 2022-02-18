@@ -14,7 +14,7 @@ on:
 jobs:
   build:
     uses: ./.github/workflows/windows-build.yml
-  build:
+  build2:
     uses: ./.github/workflows/ubuntu-build.yml
     #strategy:
       # Do not stop other jobs if one fails
