@@ -44,16 +44,21 @@ jobs:
       if: startsWith(matrix.config.os, 'windows')
       uses: microsoft/setup-msbuild@v1.0.2
 
+    # Setup Ubuntu environment
+    - name: Configure Ubuntu environment
+      if: startsWith(matrix.config.os, 'ubuntu')
+      run: chmod +x ./premake5
+
     # Build project files
-    - name: Configure
+    - name: Configure Project
       run: ./${{ matrix.config.premake }} ${{ matrix.config.generator }}
 
     # Build project on Windows
-    - name: Build
+    - name: Build on Windows
       if: startsWith(matrix.config.os, 'windows')
       run: msbuild /m /p:Configuration=Release ./build/metrisca.sln
 
     # Build project on Ubuntu
-    - name: Build
+    - name: Build on Ubuntu
       if: startsWith(matrix.config.os, 'ubuntu')
       run: make -C build config=release
