@@ -27,8 +27,9 @@ jobs:
           }
 
     steps:
+    # Clone the repository
     - name: Git checkout
-    - uses: actions/checkout@v2
+      uses: actions/checkout@v2
 
     # Setup windows environment
     - name: Add MSBuild to PATH
