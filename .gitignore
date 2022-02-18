@@ -1,0 +1,9 @@
+
+# Output directories
+bin/
+obj/
+build/
+
+# VS code
+.vscode/
+.vs/
