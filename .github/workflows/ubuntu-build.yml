@@ -5,18 +5,21 @@ on:
 
 jobs:
   build:
-    # Clone the repository
-    - name: Git checkout
-      uses: actions/checkout@v2
+    name: "Ubuntu Latest GCC"
+    os: ubuntu-latest
+    steps:
+      # Clone the repository
+      - name: Git checkout
+        uses: actions/checkout@v2
 
-    # Setup environment
-    - name: Configure environment
-      run: chmod +x ./premake5
+      # Setup environment
+      - name: Configure environment
+        run: chmod +x ./premake5
 
-    # Build project files
-    - name: Configure Project
-      run: premake5 gmake2
+      # Build project files
+      - name: Configure Project
+        run: premake5 gmake2
 
-    # Build project
-    - name: Build
-      run: make -C build config=release
+      # Build project
+      - name: Build
+        run: make -C build config=release
