@@ -24,12 +24,12 @@ jobs:
         - {
             name: "Windows Latest MSVC",
             os: windows-latest,
-            build-workflow: "./.github/workflows/windows/build.yml"
+            build-workflow: ./.github/workflows/windows/build.yml
           }
         - {
             name: "Ubuntu Latest GCC",
             os: ubuntu-latest,
-            build-workflow: "./.github/workflows/ubuntu/build.yml"
+            build-workflow: ./.github/workflows/ubuntu/build.yml
           }
 
     steps:
