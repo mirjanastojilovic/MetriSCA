@@ -1,6 +1,7 @@
 # MetriSCA - A side-channel analysis library
 
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.5778947.svg)](https://doi.org/10.5281/zenodo.5778947)
+![Build workflow](https://github.com/mirjanastojilovic/MetriSCA/actions/workflows/build.yml/badge.svg)
 
 The MetriSCA library contains various tools for side-channel analysis. It focuses on bringing performant C++ implementations
 of widely used metrics as well as being easily extendable to accommodate for new techniques and data formats.
