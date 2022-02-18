@@ -15,7 +15,7 @@ jobs:
   build:
     name: ${{ matrix.config.name }}
     runs-on: ${{ matrix.config.os }}
-    uses: ./.github/workflows/windows/build.yml
+    uses: ./.github/workflows/windows-build.yml
     strategy:
       # Do not stop other jobs if one fails
       fail-fast: false
