@@ -13,16 +13,21 @@ on:
 # Build job
 jobs:
   build:
-    strategy:
-      # Do not stop other jobs if one fails
-      fail-fast: false
-      matrix:
-        # List of config to run the build pipeline on
-        config:
-        - {
-            build-workflow: ./.github/workflows/windows/build.yml
-          }
-        - {
-            build-workflow: ./.github/workflows/ubuntu/build.yml
-          }
     uses: ./.github/workflows/windows-build.yml
+    #strategy:
+      # Do not stop other jobs if one fails
+    #  fail-fast: false
+    #  matrix:
+        # List of config to run the build pipeline on
+    #    config:
+    #    - {
+    #        os: windows-latest,
+    #        build-workflow: ./.github/workflows/windows/build.yml
+    #      }
+    #    - {
+    #        os: ubuntu-latest,
+    #        build-workflow: ./.github/workflows/ubuntu/build.yml
+    #      }
+    #runs-on: ${{ matrix.config.os }}
+    #steps:
+      
