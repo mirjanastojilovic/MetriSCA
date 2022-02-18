@@ -1,0 +1,37 @@
+name: Build
+
+# Triggers the workflow on push or pull request events but only for the main branch
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+  # Allows you to run this workflow manually from the Actions tab
+  workflow_dispatch:
+
+# Build job
+jobs:
+  build:
+    name: ${{ matrix.config.name }}
+    runs-on: ${{ matrix.config.os }}
+    strategy:
+      # Do not stop other jobs if one fails
+      fail-fast: false
+      matrix:
+        # List of config to run the build pipeline on
+        config:
+        - {
+            name: "Windows Latest MSVC",
+            os: windows-latest,
+            build-workflow: "./.github/workflows/windows/build.yml"
+          }
+        - {
+            name: "Ubuntu Latest GCC",
+            os: ubuntu-latest,
+            build-workflow: "./.github/workflows/ubuntu/build.yml"
+          }
+
+    steps:
+      - name: "Build"
+        uses: ${{ matrix.config.build-workflow }}
