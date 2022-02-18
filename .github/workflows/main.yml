@@ -1,0 +1,45 @@
+name: Build & Test
+
+# Triggers the workflow on push or pull request events but only for the main branch
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+  # Allows you to run this workflow manually from the Actions tab
+  workflow_dispatch:
+
+# Build job
+jobs:
+  build:
+    name: ${{ matrix.config.name }}
+    runs-on: ${{ matrix.config.os }}
+    strategy:
+      # Do not stop other jobs if one fails
+      fail-fast: false
+      matrix:
+        # List of config to run the build pipeline on
+        config:
+        - {
+            name: "Windows Latest MSVC",
+            os: windows-latest
+          }
+
+    steps:
+    - name: Git checkout
+    - uses: actions/checkout@v2
+
+    # Setup windows environment
+    - name: Add MSBuild to PATH
+      if: startsWith(matrix.config.os, 'windows')
+      uses: microsoft/setup-msbuild@v1.0.2
+
+    # Build project file on Windows
+    - name: Configure project
+      if: startsWith(matrix.config.os, 'windows')
+      run: ./premake5.exe vs2022
+
+    # Build project in Release mode
+    - name: Build Release
+      run: msbuild /m /p:Configuration=Release ./build/metrisca.sln
