@@ -146,8 +146,8 @@ namespace metrisca {
         void SetTitle(const std::string& title);
         void AddPositionalArgument(const std::string& name, ArgumentType type, const std::string& description, bool required = true);
         void AddFlagArgument(const std::string& name, const std::vector<std::string>& option_strings, const std::string& description);
-        void AddOptionArgument(const std::string& name, const std::vector<std::string>& option_strings, ArgumentType type, const std::string& description, const std::string& default);
-        void AddOptionArgument(const std::string& name, const std::vector<std::string>& option_strings, ArgumentType type, const std::string& description, const char* default);
+        void AddOptionArgument(const std::string& name, const std::vector<std::string>& option_strings, ArgumentType type, const std::string& description, const std::string& default_);
+        void AddOptionArgument(const std::string& name, const std::vector<std::string>& option_strings, ArgumentType type, const std::string& description, const char* default_);
         void AddOptionArgument(const std::string& name, const std::vector<std::string>& option_strings, ArgumentType type, const std::string& description, bool required = true);
 
         std::string HelpMessage() const;
@@ -165,13 +165,13 @@ namespace metrisca {
             Argument() {}
 
             Argument(const std::string& name, const std::vector<std::string>& option_strings, ArgumentAction action,
-                ArgumentType type, const std::string& default, const std::string& const_val, bool positional, bool required,
+                ArgumentType type, const std::string& default_, const std::string& const_val, bool positional, bool required,
                 const std::string& description)
                 : Name(name)
                 , OptionStrings(option_strings)
                 , Action(action)
                 , Type(type)
-                , Default(default)
+                , Default(default_)
                 , Const(const_val)
                 , IsPositional(positional)
                 , IsRequired(required)

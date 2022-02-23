@@ -14,7 +14,6 @@
 #include <cctype>
 #include <cstdint>
 #include <limits>
-#include <charconv>
 #include <iomanip>
 #include <algorithm>
 
@@ -154,7 +153,7 @@ namespace metrisca {
         const std::vector<std::string>& option_strings, 
         ArgumentType type, 
         const std::string& description, 
-        const std::string& default)
+        const std::string& default_)
     {
         CheckOptionStrings(option_strings);
         Argument arg(
@@ -162,7 +161,7 @@ namespace metrisca {
             option_strings,
             ArgumentAction::Store,
             type,
-            default,
+            default_,
             std::string{},
             false,
             false,
@@ -176,9 +175,9 @@ namespace metrisca {
         const std::vector<std::string>& option_strings,
         ArgumentType type,
         const std::string& description,
-        const char* default)
+        const char* default_)
     {
-        this->AddOptionArgument(name, option_strings, type, description, std::string(default));
+        this->AddOptionArgument(name, option_strings, type, description, std::string(default_));
     }
 
     void ArgumentParser::AddOptionArgument(
