@@ -9,6 +9,7 @@
 #ifndef _MATRIX_HPP
 #define _MATRIX_HPP
 
+#include "metrisca/core/result.hpp"
 #include "metrisca/core/errors.hpp"
 
 #include <vector>
@@ -150,7 +151,7 @@ namespace metrisca {
 
     public:
         /// Save this matrix to a file.
-        int SaveToFile(const std::string& filename)
+        Result<void, int> SaveToFile(const std::string& filename)
         {
             MatrixFileHeader header;
             header._MagicValue = MATRIX_HEADER_MAGIC_VALUE;
@@ -167,12 +168,14 @@ namespace metrisca {
 
                 file.write((char*)this->Data(), this->Size());
             }
+            else
+                return SCA_FILE_NOT_FOUND;
 
-            return SCA_OK;
+            return {};
         }
 
         /// Load the matrix data from a file
-        int LoadFromFile(const std::string& filename)
+        Result<void, int> LoadFromFile(const std::string& filename)
         {
             std::ifstream file;
             file.open(filename, std::ifstream::in | std::ifstream::binary);
@@ -201,7 +204,7 @@ namespace metrisca {
                 return SCA_FILE_NOT_FOUND;
             }
 
-            return SCA_OK;
+            return {};
         }
 
     private:
