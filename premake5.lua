@@ -6,6 +6,8 @@ bindir = basedir .. "bin/"
 intdir = basedir .. "obj/"
 toolsdir = basedir .. "tools/"
 vendordir = basedir .. "vendor/"
+testsdir = basedir .. "tests/"
+examplesdir = basedir .. "examples/"
 
 -- Project workspace
 workspace "metrisca"
@@ -78,6 +80,7 @@ project "metrisca"
     }
 
     UseSpanLite()
+    UseSPDLOG()
 
     filter "action:vs*"
         vpaths {
@@ -96,7 +99,16 @@ function UseMetriSCA()
         "metrisca"
     }
     UseSpanLite()
+    UseSPDLOG()
 end
 
--- Build additional tools
-include(toolsdir)
+-- Build the tests
+include(testsdir)
+
+-- Build the additional tools
+group "Tools"
+    include(toolsdir)
+
+-- Build the examples
+group "Examples"
+    include(examplesdir)
