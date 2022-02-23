@@ -13,7 +13,7 @@ namespace metrisca {
     class PearsonDistinguisher : public DistinguisherPlugin {
     public:
 
-        virtual Result<std::vector<std::pair<uint32_t, Matrix<double>>>, int> PearsonDistinguisher::Distinguish() override;
+        virtual Result<std::vector<std::pair<uint32_t, Matrix<double>>>, int> Distinguish() override;
 
     };
 
