@@ -14,33 +14,33 @@
 namespace metrisca {
 
     /// Enumeration of the errors that can occur in the application
-    enum {
-        SCA_INVALID_HEADER = 0,
-        SCA_FILE_NOT_FOUND,
-        SCA_INVALID_DATA_TYPE,
-        SCA_INVALID_COMMAND,
-        SCA_INVALID_ARGUMENT,
-        SCA_UNSUPPORTED_OPERATION,
-        SCA_INVALID_DATA,
-        SCA_UNKNOWN_PLUGIN,
-        SCA_MISSING_ARGUMENT,
+    enum class Error : uint32_t {
+        INVALID_HEADER = 0,
+        FILE_NOT_FOUND,
+        INVALID_DATA_TYPE,
+        INVALID_COMMAND,
+        INVALID_ARGUMENT,
+        UNSUPPORTED_OPERATION,
+        INVALID_DATA,
+        UNKNOWN_PLUGIN,
+        MISSING_ARGUMENT,
     };
 
     /// Utility method to convert an error into a human-readable string
-    static std::string ErrorCause(int error)
+    static std::string ErrorCause(Error error)
     {
         switch(error)
         {
-        case SCA_INVALID_HEADER:        return "invalid file header";
-        case SCA_FILE_NOT_FOUND:        return "file not found";
-        case SCA_INVALID_DATA_TYPE:     return "invalid data type";
-        case SCA_INVALID_COMMAND:       return "invalid command";
-        case SCA_INVALID_ARGUMENT:      return "invalid argument";
-        case SCA_UNSUPPORTED_OPERATION: return "unsupported operation";
-        case SCA_INVALID_DATA:          return "invalid data";
-        case SCA_UNKNOWN_PLUGIN:        return "unknown plugin";
-        case SCA_MISSING_ARGUMENT:      return "missing argument";
-        default:                        return "unknown error";
+        case Error::INVALID_HEADER:        return "invalid file header";
+        case Error::FILE_NOT_FOUND:        return "file not found";
+        case Error::INVALID_DATA_TYPE:     return "invalid data type";
+        case Error::INVALID_COMMAND:       return "invalid command";
+        case Error::INVALID_ARGUMENT:      return "invalid argument";
+        case Error::UNSUPPORTED_OPERATION: return "unsupported operation";
+        case Error::INVALID_DATA:          return "invalid data";
+        case Error::UNKNOWN_PLUGIN:        return "unknown plugin";
+        case Error::MISSING_ARGUMENT:      return "missing argument";
+        default:                           return "unknown error";
         }
     }
 

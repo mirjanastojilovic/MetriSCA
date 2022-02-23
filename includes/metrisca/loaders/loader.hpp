@@ -21,12 +21,12 @@ namespace metrisca {
         {}
         virtual ~LoaderPlugin() = default;
 
-        virtual Result<void, int> Init(const ArgumentList& args) override
+        virtual Result<void, Error> Init(const ArgumentList& args) override
         {
             return {};
         }
 
-        virtual Result<void, int> Load(TraceDatasetBuilder& builder) = 0;
+        virtual Result<void, Error> Load(TraceDatasetBuilder& builder) = 0;
     };
 
 }

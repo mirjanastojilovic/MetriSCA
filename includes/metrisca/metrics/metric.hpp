@@ -20,9 +20,9 @@ namespace metrisca {
         {}
         virtual ~MetricPlugin() = default;
 
-        virtual Result<void, int> Init(const ArgumentList& args) override;
+        virtual Result<void, Error> Init(const ArgumentList& args) override;
 
-        virtual Result<void, int> Compute() = 0;
+        virtual Result<void, Error> Compute() = 0;
 
     protected:
         std::string m_OutputFile{};

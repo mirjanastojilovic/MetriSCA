@@ -14,7 +14,7 @@
 
 namespace metrisca {
 
-    Result<std::vector<std::pair<uint32_t, Matrix<double>>>, int> PearsonDistinguisher::Distinguish()
+    Result<std::vector<std::pair<uint32_t, Matrix<double>>>, Error> PearsonDistinguisher::Distinguish()
     {
         auto result = InitializeResultMatrices();
 

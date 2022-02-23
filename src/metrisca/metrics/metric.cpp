@@ -10,12 +10,12 @@
 
 namespace metrisca {
 
-    Result<void, int> MetricPlugin::Init(const ArgumentList& args)
+    Result<void, Error> MetricPlugin::Init(const ArgumentList& args)
     {
         auto output_file = args.GetString(ARG_NAME_OUTPUT_FILE);
 
         if(!output_file.has_value())
-            return SCA_MISSING_ARGUMENT;
+            return Error::MISSING_ARGUMENT;
 
         m_OutputFile = output_file.value();
 

@@ -18,7 +18,7 @@
 
 namespace metrisca {
 
-    enum LogLevel {
+    enum class LogLevel : uint32_t {
         Off = SPDLOG_LEVEL_OFF,
         Trace = SPDLOG_LEVEL_TRACE,
         Info = SPDLOG_LEVEL_INFO,

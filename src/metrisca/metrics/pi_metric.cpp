@@ -20,7 +20,7 @@
 
 namespace metrisca {
 
-    Result<void, int> PIMetric::Init(const ArgumentList& args)
+    Result<void, Error> PIMetric::Init(const ArgumentList& args)
     {
         auto base_result = MetricPlugin::Init(args);
         if(base_result.IsError())
@@ -34,16 +34,16 @@ namespace metrisca {
         auto sigma = args.GetDouble(ARG_NAME_SIGMA);
 
         if(!training.has_value())
-            return SCA_MISSING_ARGUMENT;
+            return Error::MISSING_ARGUMENT;
 
         if(!testing.has_value())
-            return SCA_MISSING_ARGUMENT;
+            return Error::MISSING_ARGUMENT;
 
         if(!profiler.has_value())
-            return SCA_MISSING_ARGUMENT;
+            return Error::MISSING_ARGUMENT;
 
         if(!known_key.has_value())
-            return SCA_MISSING_ARGUMENT;
+            return Error::MISSING_ARGUMENT;
 
         m_TrainingDataset = training.value();
         m_TestingDataset = testing.value();
@@ -61,18 +61,18 @@ namespace metrisca {
         auto testing_header = m_TestingDataset->GetHeader();
 
         if(training_header.KeySize != testing_header.KeySize)
-            return SCA_INVALID_ARGUMENT;
+            return Error::INVALID_ARGUMENT;
 
         if(training_header.PlaintextSize != testing_header.PlaintextSize)
-            return SCA_INVALID_ARGUMENT;
+            return Error::INVALID_ARGUMENT;
 
         if(m_ByteIndex >= testing_header.PlaintextSize)
-            return SCA_INVALID_ARGUMENT;
+            return Error::INVALID_ARGUMENT;
 
         return {};
     }
 
-    Result<void, int> PIMetric::Compute()
+    Result<void, Error> PIMetric::Compute()
     {
         // Find the best testing sample using CPA
         uint32_t testing_trace_count = m_TestingDataset->GetHeader().NumberOfTraces;

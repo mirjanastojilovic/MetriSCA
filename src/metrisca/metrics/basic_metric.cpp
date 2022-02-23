@@ -13,7 +13,7 @@
 
 namespace metrisca {
 
-    Result<void, int> BasicMetricPlugin::Init(const ArgumentList& args)
+    Result<void, Error> BasicMetricPlugin::Init(const ArgumentList& args)
     {
         auto base_result = MetricPlugin::Init(args);
         if(base_result.IsError())
@@ -23,10 +23,10 @@ namespace metrisca {
         auto distinguisher = args.GetString(ARG_NAME_DISTINGUISHER);
 
         if(!dataset.has_value())
-            return SCA_MISSING_ARGUMENT;
+            return Error::MISSING_ARGUMENT;
 
         if(!distinguisher.has_value())
-            return SCA_MISSING_ARGUMENT;
+            return Error::MISSING_ARGUMENT;
 
         m_Dataset = dataset.value();
         

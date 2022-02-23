@@ -38,7 +38,7 @@ namespace metrisca {
 
         virtual ~Plugin() = default;
 
-        virtual Result<void, int> Init(const ArgumentList& args) = 0;
+        virtual Result<void, Error> Init(const ArgumentList& args) = 0;
 
         PluginType GetType() { return m_Type; }
 
@@ -67,11 +67,11 @@ namespace metrisca {
         }
 
         template<typename T>
-        Result<std::shared_ptr<T>, int> ConstructAs(PluginType type, const std::string& name, const ArgumentList& args) const
+        Result<std::shared_ptr<T>, Error> ConstructAs(PluginType type, const std::string& name, const ArgumentList& args) const
         {
             auto plugin = ConstructPlugin<T>(type, name);
             if(!plugin)
-                return SCA_UNKNOWN_PLUGIN;
+                return Error::UNKNOWN_PLUGIN;
             auto init_result = plugin->Init(args);
             if(init_result.IsError())
                 return init_result.Error();

@@ -69,7 +69,7 @@ namespace metrisca {
         }
     }
 
-    Result<void, int> StandardProfiler::ProfileSBOX(Matrix<double>& out) const
+    Result<void, Error> StandardProfiler::ProfileSBOX(Matrix<double>& out) const
     {
         TraceDatasetHeader header = m_Dataset->GetHeader();
 
@@ -79,13 +79,13 @@ namespace metrisca {
         case KeyGenerationMode::FIXED: {
             ProfilerSBOXFixed(out);
         } break;
-        default: return SCA_UNSUPPORTED_OPERATION;
+        default: return Error::UNSUPPORTED_OPERATION;
         }
 
         return {};
     }
 
-    Result<Matrix<double>, int> StandardProfiler::Profile()
+    Result<Matrix<double>, Error> StandardProfiler::Profile()
     {
         Matrix<double> result(256, 2); // First row is the mean and the second row is the standard deviation for each key
 
@@ -98,7 +98,7 @@ namespace metrisca {
             if(profiler_result.IsError())
                 return profiler_result.Error();
         } break;
-        default: return SCA_UNSUPPORTED_OPERATION;
+        default: return Error::UNSUPPORTED_OPERATION;
         }
 
         return result;

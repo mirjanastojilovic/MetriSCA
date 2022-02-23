@@ -15,9 +15,9 @@ namespace metrisca {
     class GuessingEntropyMetric : public BasicMetricPlugin {
     public:
 
-        virtual Result<void, int> Init(const ArgumentList& args) override;
+        virtual Result<void, Error> Init(const ArgumentList& args) override;
 
-        virtual Result<void, int> Compute() override;
+        virtual Result<void, Error> Compute() override;
 
     private:
         uint8_t m_KnownKey{};

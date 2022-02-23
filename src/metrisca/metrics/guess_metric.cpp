@@ -15,7 +15,7 @@
 
 namespace metrisca {
 
-    Result<void, int> GuessMetric::Compute()
+    Result<void, Error> GuessMetric::Compute()
     {
         auto score_or_error = m_Distinguisher->Distinguish();
         if(score_or_error.IsError())

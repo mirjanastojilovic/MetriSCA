@@ -35,7 +35,7 @@ namespace metrisca {
             return instance;
         }
 
-        Result<void, int> Start(int argc, char *argv[]);
+        Result<void, Error> Start(int argc, char *argv[]);
 
         std::shared_ptr<TraceDataset> GetDataset(const std::string& alias) const;
 
@@ -43,23 +43,27 @@ namespace metrisca {
         Application() = default;
 
         /// Handlers for CLI commands
-        Result<void, int> HandleQuit(const ArgumentList&);
-        Result<void, int> HandleHelp(const ArgumentList&);
-        Result<void, int> HandleLoad(const ArgumentList&);
-        Result<void, int> HandleUnload(const ArgumentList&);
-        Result<void, int> HandleDatasets(const ArgumentList&);
-        Result<void, int> HandleMetric(const ArgumentList&);
-        Result<void, int> HandleSplit(const ArgumentList&);
+        Result<void, Error> HandleQuit(const ArgumentList&);
+        Result<void, Error> HandleHelp(const ArgumentList&);
+        Result<void, Error> HandleLoad(const ArgumentList&);
+        Result<void, Error> HandleUnload(const ArgumentList&);
+        Result<void, Error> HandleDatasets(const ArgumentList&);
+        Result<void, Error> HandleMetric(const ArgumentList&);
+        Result<void, Error> HandleSplit(const ArgumentList&);
 
-        Result<void, int> HandleCommand(const std::string& input = "");
-        Result<void, int> HandleScript(const std::string& filename);
+        Result<void, Error> HandleCommand(const std::string& input = "");
+        Result<void, Error> HandleScript(const std::string& filename);
 
-        Result<void, std::pair<size_t, int>> RunScriptFile(const std::string& filename);
+        struct ScriptExecutionError {
+            size_t Line;
+            Error Code;
+        };
+        Result<void, ScriptExecutionError> RunScriptFile(const std::string& filename);
 
         void RegisterDataset(const std::string& alias, std::shared_ptr<TraceDataset>);
         void RemoveDataset(const std::string& alias);
 
-        using CommandHandler = std::function<Result<void, int>(const ArgumentList& arguments)>;
+        using CommandHandler = std::function<Result<void, Error>(const ArgumentList& arguments)>;
 
         struct Command {
             Command(const ArgumentParser& parser, const CommandHandler& handler, const std::string& short_description)

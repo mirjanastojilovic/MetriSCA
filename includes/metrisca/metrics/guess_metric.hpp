@@ -14,7 +14,7 @@ namespace metrisca {
 
     class GuessMetric : public BasicMetricPlugin {
     public:
-        virtual Result<void, int> Compute() override;
+        virtual Result<void, Error> Compute() override;
     };
 
 }

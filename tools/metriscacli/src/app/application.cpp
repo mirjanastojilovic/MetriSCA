@@ -238,14 +238,14 @@ namespace metrisca {
         return it->second;
     }
 
-    Result<void, int> Application::HandleQuit(const ArgumentList& arguments)
+    Result<void, Error> Application::HandleQuit(const ArgumentList& arguments)
     {
         this->m_Running = false;
 
         return {};
     }
 
-    Result<void, int> Application::HandleHelp(const ArgumentList& arguments)
+    Result<void, Error> Application::HandleHelp(const ArgumentList& arguments)
     {
         if (arguments.HasArgument("command"))
         {
@@ -263,7 +263,7 @@ namespace metrisca {
                     else
                     {
                         std::cout << "Unknown subcommand '" << subcommand_name << "'. See 'help " << command_name << "' for a list of available subcommands." << std::endl << std::endl;
-                        return SCA_INVALID_ARGUMENT;
+                        return Error::INVALID_ARGUMENT;
                     }
                 }
                 std::cout << parser.HelpMessage() << std::endl;
@@ -271,14 +271,14 @@ namespace metrisca {
             else
             {
                 std::cout << "Unknown command '" << command_name << "'. See 'help' for a list of available commands." << std::endl << std::endl;
-                return SCA_INVALID_COMMAND;
+                return Error::INVALID_COMMAND;
             }
 
             // Some commands can display some additional information. This is handled here.
             if (command_name == "load")
             {
                 std::cout << "List of available loaders:" << std::endl;
-                auto& loader_names = PluginFactory::The().PluginNamesWithType(PluginType::Loader);
+                auto loader_names = PluginFactory::The().PluginNamesWithType(PluginType::Loader);
                 if (loader_names.size() == 0)
                 {
                     std::cout << " no loaders available." << std::endl;
@@ -295,7 +295,7 @@ namespace metrisca {
             else if (command_name == "metric" && !arguments.HasArgument("arg"))
             {
                 std::cout << "List of available metrics:" << std::endl;
-                auto& metric_names = PluginFactory::The().PluginNamesWithType(PluginType::Metric);
+                auto metric_names = PluginFactory::The().PluginNamesWithType(PluginType::Metric);
                 if (metric_names.size() == 0)
                 {
                     std::cout << " no metrics available." << std::endl;
@@ -325,7 +325,7 @@ namespace metrisca {
         return {};
     }
 
-    Result<void, int> Application::HandleLoad(const ArgumentList& arguments)
+    Result<void, Error> Application::HandleLoad(const ArgumentList& arguments)
     {
         std::shared_ptr<TraceDataset> dataset;
 
@@ -335,8 +335,8 @@ namespace metrisca {
             auto loader_or_error = PluginFactory::The().ConstructAs<LoaderPlugin>(PluginType::Loader, loader_name, arguments);
             if (loader_or_error.IsError())
             {
-                METRISCA_ERROR("Failed to initialize loader '{}' with error code {}: {}. See 'help load'.", loader_name, std::to_string(loader_or_error.Error()), ErrorCause(loader_or_error.Error()));
-                return SCA_INVALID_ARGUMENT;
+                METRISCA_ERROR("Failed to initialize loader '{}' with error code {}: {}. See 'help load'.", loader_name, loader_or_error.Error(), ErrorCause(loader_or_error.Error()));
+                return Error::INVALID_ARGUMENT;
             }
 
             METRISCA_INFO("Loading file '{}'...", arguments.GetString("file").value());
@@ -346,14 +346,14 @@ namespace metrisca {
             auto result = loader->Load(builder);
             if(result.IsError())
             {
-                METRISCA_ERROR("Loader failed to load dataset and exited with error code {}: {}", std::to_string(result.Error()), ErrorCause(result.Error()));
+                METRISCA_ERROR("Loader failed to load dataset and exited with error code {}: {}", result.Error(), ErrorCause(result.Error()));
                 return result.Error();
             }
 
             auto dataset_or_error = builder.Build();
             if(dataset_or_error.IsError())
             {
-                METRISCA_ERROR("Loader failed to build dataset and exited with error code {}: {}", std::to_string(dataset_or_error.Error()), ErrorCause(dataset_or_error.Error()));
+                METRISCA_ERROR("Loader failed to build dataset and exited with error code {}: {}", dataset_or_error.Error(), ErrorCause(dataset_or_error.Error()));
                 return dataset_or_error.Error();
             }
 
@@ -366,14 +366,14 @@ namespace metrisca {
             auto dataset_or_error = TraceDataset::LoadFromFile(arguments.GetString("file").value());
             if(dataset_or_error.IsError())
             {
-                METRISCA_ERROR("Loader failed to load dataset and exited with error code {}: {}", std::to_string(dataset_or_error.Error()), ErrorCause(dataset_or_error.Error()));
+                METRISCA_ERROR("Loader failed to load dataset and exited with error code {}: {}", dataset_or_error.Error(), ErrorCause(dataset_or_error.Error()));
                 return dataset_or_error.Error();
             }
 
             dataset = dataset_or_error.Value();
         }
 
-        METRISCA_INFO("Loaded {} traces of {} samples as '{}'", std::to_string(dataset->GetHeader().NumberOfTraces), std::to_string(dataset->GetHeader().NumberOfSamples), arguments.GetString("alias").value());
+        METRISCA_INFO("Loaded {} traces of {} samples as '{}'", dataset->GetHeader().NumberOfTraces, dataset->GetHeader().NumberOfSamples, arguments.GetString("alias").value());
 
         if(arguments.HasArgument("loader") && arguments.HasArgument("out"))
         {
@@ -387,13 +387,13 @@ namespace metrisca {
         return {};
     }
 
-    Result<void, int> Application::HandleUnload(const ArgumentList& arguments)
+    Result<void, Error> Application::HandleUnload(const ArgumentList& arguments)
     {
         auto alias = arguments.GetString("alias").value();
         if(!GetDataset(alias))
         {
             METRISCA_ERROR("Unknown dataset '{}'. See 'datasets'.", alias);
-            return SCA_INVALID_ARGUMENT;
+            return Error::INVALID_ARGUMENT;
         }
 
         RemoveDataset(alias);
@@ -403,7 +403,7 @@ namespace metrisca {
         return {};
     }
 
-    Result<void, int> Application::HandleDatasets(const ArgumentList& arguments)
+    Result<void, Error> Application::HandleDatasets(const ArgumentList& arguments)
     {
         if(m_Datasets.size() > 0)
         {
@@ -426,7 +426,7 @@ namespace metrisca {
         return {};
     }
 
-    Result<void, int> Application::HandleMetric(const ArgumentList& arguments)
+    Result<void, Error> Application::HandleMetric(const ArgumentList& arguments)
     {
         if (arguments.HasArgument("subcommand"))
         {
@@ -434,27 +434,28 @@ namespace metrisca {
             auto metric_or_error = PluginFactory::The().ConstructAs<MetricPlugin>(PluginType::Metric, metric_name, arguments);
             if (metric_or_error.IsError())
             {
-                METRISCA_ERROR("Failed to initialize metric '{0}' with error code {1}: {2}. See 'help metric {0}'.", metric_name, std::to_string(metric_or_error.Error()), ErrorCause(metric_or_error.Error()));
-                return SCA_INVALID_ARGUMENT;
+                METRISCA_ERROR("Failed to initialize metric '{0}' with error code {1}: {2}. See 'help metric {0}'.", metric_name, metric_or_error.Error(), ErrorCause(metric_or_error.Error()));
+                return Error::INVALID_ARGUMENT;
             }
 
             auto metric = metric_or_error.Value();
             auto result = metric->Compute();
             if (result.IsError())
             {
-                METRISCA_ERROR("Metric failed to compute and exited with error code {}: {}", std::to_string(result.Error()), ErrorCause(result.Error()));
+                METRISCA_ERROR("Metric failed to compute and exited with error code {}: {}", result.Error(), ErrorCause(result.Error()));
                 return result.Error();
             }
         }
         else
         {
+            // FIXME: Handle this case.
             METRISCA_CRITICAL("Hmm");
         }
 
         return {};
     }
 
-    Result<void, int> Application::HandleSplit(const ArgumentList& arguments)
+    Result<void, Error> Application::HandleSplit(const ArgumentList& arguments)
     {
         auto dataset = arguments.GetDataset("dataset").value();
         TraceDatasetHeader header = dataset->GetHeader();
@@ -463,11 +464,11 @@ namespace metrisca {
 
         if(traceSplit >= header.NumberOfTraces)
         {
-            METRISCA_ERROR("Invalid splitting index {}. Dataset has {} traces.", std::to_string(traceSplit), std::to_string(header.NumberOfTraces));
-            return SCA_INVALID_ARGUMENT;
+            METRISCA_ERROR("Invalid splitting index {}. Dataset has {} traces.", traceSplit, header.NumberOfTraces);
+            return Error::INVALID_ARGUMENT;
         }
 
-        METRISCA_INFO("Splitting dataset at index {}.", std::to_string(traceSplit));
+        METRISCA_INFO("Splitting dataset at index {}.", traceSplit);
 
         std::shared_ptr<TraceDataset> dataset1 = std::make_shared<TraceDataset>();
         std::shared_ptr<TraceDataset> dataset2 = std::make_shared<TraceDataset>();
@@ -484,7 +485,7 @@ namespace metrisca {
         return {};
     }
 
-    Result<void, int> Application::Start(int argc, char *argv[])
+    Result<void, Error> Application::Start(int argc, char *argv[])
     {
 #if defined(DEBUG)
         Logger::Init(LogLevel::Trace);
@@ -513,7 +514,7 @@ namespace metrisca {
         catch (ParserException& e)
         {
             std::cout << e.what() << std::endl;
-            return SCA_INVALID_COMMAND;
+            return Error::INVALID_COMMAND;
         }
 
         if (arguments.HasArgument("help") && arguments.GetBool("help").value())
@@ -558,7 +559,7 @@ namespace metrisca {
         return std::make_pair(command, args);
     }
 
-    Result<void, int> Application::HandleCommand(const std::string& input)
+    Result<void, Error> Application::HandleCommand(const std::string& input)
     {
         std::string line;
         if (input.length() == 0)
@@ -598,7 +599,7 @@ namespace metrisca {
                     else
                     {
                         std::cout << "Unknown subcommand '" << subcommand_name << "'. See 'help " << parser.Name() << "'." << std::endl << std::endl;
-                        return SCA_INVALID_COMMAND;
+                        return Error::INVALID_COMMAND;
                     }
                 }
 
@@ -609,12 +610,12 @@ namespace metrisca {
                 catch (UnknownDatasetException& ude)
                 {
                     std::cout << ude.what() << " See 'datasets' for a list of loaded datasets." << std::endl << std::endl;
-                    return SCA_INVALID_COMMAND;
+                    return Error::INVALID_COMMAND;
                 }
                 catch (ParserException& pe)
                 {
                     std::cout << pe.what() << " See 'help " << parser.FullName() << "'." << std::endl << std::endl;
-                    return SCA_INVALID_COMMAND;
+                    return Error::INVALID_COMMAND;
                 }
 
                 auto handler_result = command->Handler(arguments);
@@ -624,14 +625,14 @@ namespace metrisca {
             else
             {
                 std::cout << "Invalid command: '" << name << "'. See 'help' for a list of valid commands." << std::endl << std::endl;
-                return SCA_INVALID_COMMAND;
+                return Error::INVALID_COMMAND;
             }
         }
 
         return {};
     }
 
-    Result<void, int> Application::HandleScript(const std::string& filename)
+    Result<void, Error> Application::HandleScript(const std::string& filename)
     {
         auto script_result = this->RunScriptFile(filename);
         if(script_result.IsError())
@@ -651,12 +652,15 @@ namespace metrisca {
             METRISCA_INFO("Script execution finished successfully.");
         }
 
-        return script_result.IsError() ? script_result.Error().second : 0;
+        if (script_result.IsError())
+            return script_result.Error().Code;
+
+        return {};
     }
 
     /// Read a text file and execute commands line by line
     /// Lines starting with the character '#' are ignored as comments
-    Result<void, std::pair<size_t, int>> Application::RunScriptFile(const std::string& filename)
+    Result<void, Application::ScriptExecutionError> Application::RunScriptFile(const std::string& filename)
     {
         std::ifstream file;
         file.open(filename);
@@ -664,7 +668,7 @@ namespace metrisca {
         std::string line;
 
         if(!file)
-            return std::make_pair(0, SCA_FILE_NOT_FOUND);
+            return { { 0, Error::FILE_NOT_FOUND } };
 
         while(std::getline(file, line))
         {
@@ -672,7 +676,7 @@ namespace metrisca {
             {
                 auto command_result = HandleCommand(line);
                 if(command_result.IsError())
-                    return std::make_pair(lineIndex, command_result.Error());
+                    return { { lineIndex, command_result.Error() } };
             }
             ++lineIndex;
         }

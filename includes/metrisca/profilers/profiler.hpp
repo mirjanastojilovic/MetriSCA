@@ -20,9 +20,9 @@ namespace metrisca {
         {}
         virtual ~ProfilerPlugin() = default;
 
-        virtual Result<void, int> Init(const ArgumentList& args) override;
+        virtual Result<void, Error> Init(const ArgumentList& args) override;
 
-        virtual Result<Matrix<double>, int> Profile() = 0;
+        virtual Result<Matrix<double>, Error> Profile() = 0;
 
     protected:
         std::shared_ptr<TraceDataset> m_Dataset{ nullptr };

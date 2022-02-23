@@ -20,7 +20,7 @@
 
 namespace metrisca {
 
-    Result<void, int> TTestMetric::Init(const ArgumentList& args)
+    Result<void, Error> TTestMetric::Init(const ArgumentList& args)
     {
         auto base_result = MetricPlugin::Init(args);
         if(base_result.IsError())
@@ -34,10 +34,10 @@ namespace metrisca {
         auto sample_end = args.GetUInt32(ARG_NAME_SAMPLE_END);
 
         if(!fixed_dataset.has_value())
-            return SCA_MISSING_ARGUMENT;
+            return Error::MISSING_ARGUMENT;
 
         if(!random_dataset.has_value())
-            return SCA_MISSING_ARGUMENT;
+            return Error::MISSING_ARGUMENT;
 
         m_FixedDataset = fixed_dataset.value();
         m_RandomDataset = random_dataset.value();
@@ -46,10 +46,10 @@ namespace metrisca {
         auto random_header = m_RandomDataset->GetHeader();
 
         if(fixed_header.NumberOfTraces != random_header.NumberOfTraces)
-            return SCA_INVALID_ARGUMENT;
+            return Error::INVALID_ARGUMENT;
 
         if(fixed_header.NumberOfSamples != random_header.NumberOfSamples)
-            return SCA_INVALID_ARGUMENT;
+            return Error::INVALID_ARGUMENT;
 
         m_TraceCount = trace_count.value_or(fixed_header.NumberOfTraces);
         m_TraceStep = trace_step.value_or(0);
@@ -57,18 +57,18 @@ namespace metrisca {
         m_SampleCount = sample_end.value_or(fixed_header.NumberOfSamples) - m_SampleStart;
 
         if(m_SampleCount == 0)
-            return SCA_INVALID_ARGUMENT;
+            return Error::INVALID_ARGUMENT;
 
         if(m_SampleStart + m_SampleCount > fixed_header.NumberOfSamples)
-            return SCA_INVALID_ARGUMENT;
+            return Error::INVALID_ARGUMENT;
 
         if(m_TraceCount > fixed_header.NumberOfTraces)
-            return SCA_INVALID_ARGUMENT;
+            return Error::INVALID_ARGUMENT;
 
         return {};
     }
 
-    Result<void, int> TTestMetric::Compute()
+    Result<void, Error> TTestMetric::Compute()
     {
         std::vector<uint32_t> trace_counts = { m_TraceCount };
         if(m_TraceStep > 0)

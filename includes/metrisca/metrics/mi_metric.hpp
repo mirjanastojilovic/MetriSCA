@@ -14,9 +14,9 @@ namespace metrisca {
 
     class MIMetric : public MetricPlugin {
     public:
-        virtual Result<void, int> Init(const ArgumentList& args) override;
+        virtual Result<void, Error> Init(const ArgumentList& args) override;
 
-        virtual Result<void, int> Compute() override;
+        virtual Result<void, Error> Compute() override;
 
     private:
         std::shared_ptr<TraceDataset> m_Dataset{ nullptr };

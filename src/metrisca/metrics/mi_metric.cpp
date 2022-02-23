@@ -19,7 +19,7 @@
 
 namespace metrisca {
 
-    Result<void, int> MIMetric::Init(const ArgumentList& args)
+    Result<void, Error> MIMetric::Init(const ArgumentList& args)
     {
         auto base_result = MetricPlugin::Init(args);
         if(base_result.IsError())
@@ -33,10 +33,10 @@ namespace metrisca {
         auto sigma = args.GetDouble(ARG_NAME_SIGMA);
 
         if(!dataset.has_value())
-            return SCA_MISSING_ARGUMENT;
+            return Error::MISSING_ARGUMENT;
 
         if(!profiler.has_value())
-            return SCA_MISSING_ARGUMENT;
+            return Error::MISSING_ARGUMENT;
 
         m_Dataset = dataset.value();
 
@@ -54,7 +54,7 @@ namespace metrisca {
         return {};
     }
 
-    Result<void, int> MIMetric::Compute()
+    Result<void, Error> MIMetric::Compute()
     {
         auto profiler_or_error = m_Profiler->Profile();
         if(profiler_or_error.IsError())
@@ -124,7 +124,7 @@ namespace metrisca {
         // Validate the integration parameters
         if(n == 0)
         {
-            return SCA_INVALID_DATA;
+            return Error::INVALID_DATA;
         }
         else if(n > 99999)
         {

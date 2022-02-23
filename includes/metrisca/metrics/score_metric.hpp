@@ -14,7 +14,7 @@ namespace metrisca {
 
     class ScoreMetric : public BasicMetricPlugin {
     public:
-        virtual Result<void, int> Compute() override;
+        virtual Result<void, Error> Compute() override;
     };
 
 }

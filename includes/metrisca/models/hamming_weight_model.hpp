@@ -14,7 +14,7 @@ namespace metrisca {
 
     class HammingWeightModel : public PowerModelPlugin {
     public:
-        virtual Result<Matrix<int32_t>, int> Model() override;
+        virtual Result<Matrix<int32_t>, Error> Model() override;
     };
 
 }

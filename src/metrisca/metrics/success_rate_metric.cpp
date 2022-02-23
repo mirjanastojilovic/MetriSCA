@@ -15,7 +15,7 @@
 
 namespace metrisca {
 
-    Result<void, int> SuccessRateMetric::Init(const ArgumentList& args)
+    Result<void, Error> SuccessRateMetric::Init(const ArgumentList& args)
     {
         auto base_result = BasicMetricPlugin::Init(args);
         if(base_result.IsError())
@@ -25,18 +25,18 @@ namespace metrisca {
         auto order = args.GetUInt8(ARG_NAME_ORDER);
 
         if(!known_key.has_value())
-            return SCA_MISSING_ARGUMENT;
+            return Error::MISSING_ARGUMENT;
 
         m_KnownKey = known_key.value();
         m_Order = order.value_or(1);
 
         if(m_Order == 0)
-            return SCA_INVALID_ARGUMENT;
+            return Error::INVALID_ARGUMENT;
 
         return {};
     }
 
-    Result<void, int> SuccessRateMetric::Compute()
+    Result<void, Error> SuccessRateMetric::Compute()
     {
         auto score_or_error = m_Distinguisher->Distinguish();
         if(score_or_error.IsError())

@@ -8,6 +8,8 @@
 
 #pragma once
 
+#include <cstdint>
+
 namespace metrisca {
 
     /// Forward declarations
@@ -20,6 +22,7 @@ namespace metrisca {
     class ProfilerPlugin;
     class MetricPlugin;
     class LoaderPlugin;
+    enum class Error : uint32_t;
     
     template<typename T>
     class Matrix;

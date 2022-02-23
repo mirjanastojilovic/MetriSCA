@@ -17,7 +17,7 @@ namespace metrisca {
     public:
         virtual ~BasicMetricPlugin() = default;
 
-        virtual Result<void, int> Init(const ArgumentList& args) override;
+        virtual Result<void, Error> Init(const ArgumentList& args) override;
 
     protected:
         std::shared_ptr<TraceDataset> m_Dataset{ nullptr };

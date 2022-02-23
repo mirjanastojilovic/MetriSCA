@@ -23,9 +23,9 @@ namespace metrisca {
 
         virtual ~DistinguisherPlugin() = default;
 
-        virtual Result<void, int> Init(const ArgumentList& args) override;
+        virtual Result<void, Error> Init(const ArgumentList& args) override;
 
-        virtual Result<std::vector<std::pair<uint32_t, Matrix<double>>>, int> Distinguish() = 0;
+        virtual Result<std::vector<std::pair<uint32_t, Matrix<double>>>, Error> Distinguish() = 0;
 
     protected:
         std::vector<std::pair<uint32_t, Matrix<double>>> InitializeResultMatrices();

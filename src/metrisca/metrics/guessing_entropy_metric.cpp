@@ -15,7 +15,7 @@
 
 namespace metrisca {
 
-    Result<void, int> GuessingEntropyMetric::Init(const ArgumentList& args)
+    Result<void, Error> GuessingEntropyMetric::Init(const ArgumentList& args)
     {
         auto base_result = BasicMetricPlugin::Init(args);
         if(base_result.IsError())
@@ -24,14 +24,14 @@ namespace metrisca {
         auto known_key = args.GetUInt8(ARG_NAME_KNOWN_KEY);
 
         if(!known_key.has_value())
-            return SCA_MISSING_ARGUMENT;
+            return Error::MISSING_ARGUMENT;
 
         m_KnownKey = known_key.value();
 
         return {};
     }
 
-    Result<void, int> GuessingEntropyMetric::Compute()
+    Result<void, Error> GuessingEntropyMetric::Compute()
     {
         auto score_or_error = m_Distinguisher->Distinguish();
         if(score_or_error.IsError())

@@ -14,10 +14,10 @@ namespace metrisca {
 
     class StandardProfiler : public ProfilerPlugin {
     public:
-        virtual Result<Matrix<double>, int> Profile() override;
+        virtual Result<Matrix<double>, Error> Profile() override;
 
     private:
-        Result<void, int> ProfileSBOX(Matrix<double>& out) const;
+        Result<void, Error> ProfileSBOX(Matrix<double>& out) const;
         void ProfilerSBOXFixed(Matrix<double>& out) const;
     };
 

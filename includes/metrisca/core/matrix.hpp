@@ -151,7 +151,7 @@ namespace metrisca {
 
     public:
         /// Save this matrix to a file.
-        Result<void, int> SaveToFile(const std::string& filename)
+        Result<void, Error> SaveToFile(const std::string& filename)
         {
             MatrixFileHeader header;
             header._MagicValue = MATRIX_HEADER_MAGIC_VALUE;
@@ -169,13 +169,13 @@ namespace metrisca {
                 file.write((char*)this->Data(), this->Size());
             }
             else
-                return SCA_FILE_NOT_FOUND;
+                return Error::FILE_NOT_FOUND;
 
             return {};
         }
 
         /// Load the matrix data from a file
-        Result<void, int> LoadFromFile(const std::string& filename)
+        Result<void, Error> LoadFromFile(const std::string& filename)
         {
             std::ifstream file;
             file.open(filename, std::ifstream::in | std::ifstream::binary);
@@ -187,11 +187,11 @@ namespace metrisca {
 
                 if(header._MagicValue != MATRIX_HEADER_MAGIC_VALUE)
                 {
-                    return SCA_INVALID_HEADER;
+                    return Error::INVALID_HEADER;
                 }
                 if(header.ElemSize != sizeof(value_type))
                 {
-                    return SCA_INVALID_DATA_TYPE;
+                    return Error::INVALID_DATA_TYPE;
                 }
 
                 this->m_Data.resize(header.Width * header.Height);
@@ -201,7 +201,7 @@ namespace metrisca {
             }
             else
             {
-                return SCA_FILE_NOT_FOUND;
+                return Error::FILE_NOT_FOUND;
             }
 
             return {};

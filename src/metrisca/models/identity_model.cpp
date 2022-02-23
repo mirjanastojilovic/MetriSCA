@@ -39,7 +39,7 @@ namespace metrisca {
         }
     }
 
-    Result<Matrix<int32_t>, int> IdentityModel::Model()
+    Result<Matrix<int32_t>, Error> IdentityModel::Model()
     {
         TraceDatasetHeader header = m_Dataset->GetHeader();
 
@@ -54,7 +54,7 @@ namespace metrisca {
         case EncryptionAlgorithm::AES_128: {
             IdentityAES128(result, m_Dataset, m_ByteIndex);
         } break;
-        default: return SCA_UNSUPPORTED_OPERATION;
+        default: return Error::UNSUPPORTED_OPERATION;
         }
 
         return result;

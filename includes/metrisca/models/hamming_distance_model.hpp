@@ -14,7 +14,7 @@ namespace metrisca {
 
     class HammingDistanceModel : public PowerModelPlugin {
     public:
-        virtual Result<Matrix<int32_t>, int> Model() override;
+        virtual Result<Matrix<int32_t>, Error> Model() override;
     };
 
 }

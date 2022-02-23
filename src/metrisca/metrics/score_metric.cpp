@@ -19,7 +19,7 @@
 
 namespace metrisca {
 
-    Result<void, int> ScoreMetric::Compute()
+    Result<void, Error> ScoreMetric::Compute()
     {
         auto score_or_error = m_Distinguisher->Distinguish();
         if(score_or_error.IsError())

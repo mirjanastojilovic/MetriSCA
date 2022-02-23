@@ -65,7 +65,7 @@ namespace metrisca {
         }
     }
     
-    Result<std::shared_ptr<TraceDataset>, int> TraceDataset::LoadFromFile(const std::string& filename)
+    Result<std::shared_ptr<TraceDataset>, Error> TraceDataset::LoadFromFile(const std::string& filename)
     {
         std::shared_ptr<TraceDataset> result = std::make_shared<TraceDataset>();
 
@@ -78,7 +78,7 @@ namespace metrisca {
             file.read((char*)&result->m_Header, sizeof(TraceDatasetHeader));
             if(result->m_Header._MagicValue != DATASET_HEADER_MAGIC_VALUE)
             {
-                return SCA_INVALID_HEADER;
+                return Error::INVALID_HEADER;
             }
 
             // Read plaintext data
@@ -136,7 +136,7 @@ namespace metrisca {
         }
         else
         {
-            return SCA_FILE_NOT_FOUND;
+            return Error::FILE_NOT_FOUND;
         }
 
         return result;
@@ -395,7 +395,7 @@ namespace metrisca {
         this->m_Keys.insert(this->m_Keys.end(), key.begin(), key.end());
     }
 
-    Result<std::shared_ptr<TraceDataset>, int> TraceDatasetBuilder::Build()
+    Result<std::shared_ptr<TraceDataset>, Error> TraceDatasetBuilder::Build()
     {
         std::shared_ptr<TraceDataset> result = std::make_shared<TraceDataset>();
 
@@ -407,7 +407,7 @@ namespace metrisca {
             {
             case EncryptionAlgorithm::S_BOX: this->PlaintextSize = 1; break;
             case EncryptionAlgorithm::AES_128: this->PlaintextSize = 16; break;
-            default: assert(false); return SCA_INVALID_DATA;
+            default: assert(false); return Error::INVALID_DATA;
             }
         }
 
@@ -417,7 +417,7 @@ namespace metrisca {
             {
             case EncryptionAlgorithm::S_BOX: this->KeySize = 1; break;
             case EncryptionAlgorithm::AES_128: this->KeySize = 16; break;
-            default: assert(false); return SCA_INVALID_DATA;
+            default: assert(false); return Error::INVALID_DATA;
             }
         }
 
@@ -425,7 +425,7 @@ namespace metrisca {
         // Traces are stored with each sample as a row of the matrix
         if(this->NumberOfTraces * this->NumberOfSamples != this->m_Traces.size())
         {
-            return SCA_INVALID_DATA;
+            return Error::INVALID_DATA;
         }
         result->m_Traces = Matrix<int32_t>(this->NumberOfTraces, this->NumberOfSamples);
         for(size_t s = 0; s < this->NumberOfSamples; ++s)
@@ -457,12 +457,12 @@ namespace metrisca {
             } break;
             default: {
                 assert(false);
-                return SCA_INVALID_DATA;
+                return Error::INVALID_DATA;
             } break;
         }
         if(plaintext_copy_count * this->PlaintextSize != this->m_Plaintexts.size())
         {
-            return SCA_INVALID_DATA;
+            return Error::INVALID_DATA;
         }
 
         result->m_Plaintexts = Matrix<uint8_t>(this->PlaintextSize, plaintext_count);
@@ -481,12 +481,12 @@ namespace metrisca {
             } break;
             default: {
                 assert(false);
-                return SCA_INVALID_DATA;
+                return Error::INVALID_DATA;
             } break;
         }
         if(key_count * this->KeySize != this->m_Keys.size())
         {
-            return SCA_INVALID_DATA;
+            return Error::INVALID_DATA;
         }
 
         result->m_Keys = Matrix<uint8_t>(this->KeySize, key_count);

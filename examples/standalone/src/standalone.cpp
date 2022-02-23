@@ -5,18 +5,18 @@ using namespace metrisca;
 
 class TestLoader : public LoaderPlugin {
 public:
-    virtual Result<void, int> Init(const ArgumentList& args) override
+    virtual Result<void, Error> Init(const ArgumentList& args) override
     {
         auto filename = args.GetString("file");
         if(!filename.has_value())
-            return SCA_MISSING_ARGUMENT;
+            return Error::MISSING_ARGUMENT;
 
         m_Filename = filename.value();
 
         return {};
     }
 
-    virtual Result<void, int> Load(TraceDatasetBuilder& builder) override
+    virtual Result<void, Error> Load(TraceDatasetBuilder& builder) override
     {
         // The file contains 256 traces of 5000 samples each
         unsigned int num_traces = 256;
@@ -38,7 +38,7 @@ public:
         if(!file)
         {
             // If the file does not exist, return the appropriate error code.
-            return SCA_FILE_NOT_FOUND;
+            return Error::FILE_NOT_FOUND;
         }
 
         std::string line;

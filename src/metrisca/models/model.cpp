@@ -12,13 +12,13 @@
 
 namespace metrisca {
 
-    Result<void, int> PowerModelPlugin::Init(const ArgumentList& args)
+    Result<void, Error> PowerModelPlugin::Init(const ArgumentList& args)
     {
         auto dataset = args.GetDataset(ARG_NAME_DATASET);
         auto byte_index = args.GetUInt32(ARG_NAME_BYTE_INDEX);
 
         if(!dataset.has_value())
-            return SCA_MISSING_ARGUMENT;
+            return Error::MISSING_ARGUMENT;
 
         m_Dataset = dataset.value();
         TraceDatasetHeader header = m_Dataset->GetHeader();
@@ -26,7 +26,7 @@ namespace metrisca {
         m_ByteIndex = byte_index.value_or(0);
         
         if(m_ByteIndex >= header.PlaintextSize)
-            return SCA_INVALID_ARGUMENT;
+            return Error::INVALID_ARGUMENT;
 
         return {};
     }

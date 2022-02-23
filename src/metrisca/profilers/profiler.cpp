@@ -12,17 +12,17 @@
 
 namespace metrisca {
 
-    Result<void, int> ProfilerPlugin::Init(const ArgumentList& args)
+    Result<void, Error> ProfilerPlugin::Init(const ArgumentList& args)
     {
         auto dataset = args.GetDataset(ARG_NAME_DATASET);
         auto known_key = args.GetUInt8(ARG_NAME_KNOWN_KEY);
         auto byte_index = args.GetUInt32(ARG_NAME_BYTE_INDEX);
 
         if(!dataset.has_value())
-            return SCA_MISSING_ARGUMENT;
+            return Error::MISSING_ARGUMENT;
 
         if(!known_key.has_value())
-            return SCA_MISSING_ARGUMENT;
+            return Error::MISSING_ARGUMENT;
 
         m_Dataset = dataset.value();
         m_KnownKey = known_key.value();
@@ -31,7 +31,7 @@ namespace metrisca {
         m_ByteIndex = byte_index.value_or(0);
 
         if(m_ByteIndex >= header.PlaintextSize)
-            return SCA_INVALID_ARGUMENT;
+            return Error::INVALID_ARGUMENT;
 
         return {};
     }

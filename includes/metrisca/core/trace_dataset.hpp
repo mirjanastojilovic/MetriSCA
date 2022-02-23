@@ -74,7 +74,7 @@ namespace metrisca {
 
         /// Methods that can be used to save/load a dataset from a file
         void SaveToFile(const std::string& filename);
-        static Result<std::shared_ptr<TraceDataset>, int> LoadFromFile(const std::string& filename);
+        static Result<std::shared_ptr<TraceDataset>, Error> LoadFromFile(const std::string& filename);
 
         /// Get a read-only view of the underlying data. These methods do not
         /// perform any copy.
@@ -147,7 +147,7 @@ namespace metrisca {
         void AddKey(const std::vector<uint8_t>& key);
 
         /// Construct a new structured dataset
-        Result<std::shared_ptr<TraceDataset>, int> Build();
+        Result<std::shared_ptr<TraceDataset>, Error> Build();
 
     public:
         double TimeResolution{ 0.0 };               /// The time in seconds between two samples

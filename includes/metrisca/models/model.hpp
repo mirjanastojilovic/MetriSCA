@@ -21,9 +21,9 @@ namespace metrisca {
         {}
         virtual ~PowerModelPlugin() = default;
 
-        virtual Result<void, int> Init(const ArgumentList& args) override;
+        virtual Result<void, Error> Init(const ArgumentList& args) override;
 
-        virtual Result<Matrix<int32_t>, int> Model() = 0;
+        virtual Result<Matrix<int32_t>, Error> Model() = 0;
 
     protected:
         std::shared_ptr<TraceDataset> m_Dataset;

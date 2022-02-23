@@ -125,14 +125,14 @@ int binloader(TraceDatasetBuilder& builder, const std::string& filename)
 
 class TestLoader : public LoaderPlugin {
 public:
-    virtual Result<void, int> Init(const ArgumentList& args) override
+    virtual Result<void, Error> Init(const ArgumentList& args) override
     {
-        return SCA_FILE_NOT_FOUND;
+        return Error::FILE_NOT_FOUND;
     }
 
-    virtual Result<void, int> Load(TraceDatasetBuilder& builder) override
+    virtual Result<void, Error> Load(TraceDatasetBuilder& builder) override
     {
-        return SCA_FILE_NOT_FOUND;
+        return Error::FILE_NOT_FOUND;
     }
 };
 
@@ -148,7 +148,7 @@ int main(int argc, char *argv[])
     auto result = app.Start(argc, argv);
 
     if (result.IsError())
-        return result.Error();
+        return static_cast<int>(result.Error());
 
     return 0;
 }

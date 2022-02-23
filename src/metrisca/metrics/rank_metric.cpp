@@ -15,7 +15,7 @@
 
 namespace metrisca {
 
-    Result<void, int> RankMetric::Compute()
+    Result<void, Error> RankMetric::Compute()
     {
         auto score_or_error = m_Distinguisher->Distinguish();
         if(score_or_error.IsError())

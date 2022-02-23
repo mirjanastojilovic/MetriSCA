@@ -15,7 +15,7 @@
 
 namespace metrisca {
 
-    Result<void, int> DistinguisherPlugin::Init(const ArgumentList& args)
+    Result<void, Error> DistinguisherPlugin::Init(const ArgumentList& args)
     {
         auto dataset = args.GetDataset(ARG_NAME_DATASET);
         auto model = args.GetString(ARG_NAME_MODEL);
@@ -25,9 +25,9 @@ namespace metrisca {
         auto trace_step = args.GetUInt32(ARG_NAME_TRACE_STEP);
 
         if(!dataset.has_value())
-            return SCA_MISSING_ARGUMENT;
+            return Error::MISSING_ARGUMENT;
         if(!model.has_value())
-            return SCA_MISSING_ARGUMENT;
+            return Error::MISSING_ARGUMENT;
 
         m_Dataset = dataset.value();
         auto model_or_error = PluginFactory::The().ConstructAs<PowerModelPlugin>(PluginType::PowerModel, model.value(), args);
@@ -42,13 +42,13 @@ namespace metrisca {
         m_SampleCount = sample_end.value_or(header.NumberOfSamples) - m_SampleStart;
 
         if(m_SampleCount == 0)
-            return SCA_INVALID_ARGUMENT;
+            return Error::INVALID_ARGUMENT;
 
         if(m_SampleStart + m_SampleCount > header.NumberOfSamples)
-            return SCA_INVALID_ARGUMENT;
+            return Error::INVALID_ARGUMENT;
 
         if(m_TraceCount > header.NumberOfTraces)
-            return SCA_INVALID_ARGUMENT;
+            return Error::INVALID_ARGUMENT;
 
         return {};
     }
