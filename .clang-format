@@ -13,5 +13,3 @@ IndentPPDirectives: AfterHash
 Language: Cpp
 Standard: Cpp11
 UseTab: Never
-
-...
