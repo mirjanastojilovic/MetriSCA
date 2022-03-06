@@ -18,7 +18,7 @@ jobs:
         uses: actions/checkout@v2
 
       # Run Clang-format and Clang-tidy
-      - uses: ros-dorian/cpp-linter-action@bugfix/post_pr_comments
+      - uses: ros-dorian/cpp-linter-action@feature/clang-tidy-include-dirs
         id: linter
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -27,6 +27,7 @@ jobs:
           extensions: "cpp,hpp"
           version: "12"
           ignore: ".github|vendor"
+          include-dirs: "includes|vendor/span-lite/includes"
 
       # Fail the job if the linter found errors
       - name: Fail fast
