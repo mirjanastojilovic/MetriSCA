@@ -1,0 +1,32 @@
+name: Linter
+
+# Triggers the workflow on push or pull request events but only for the main branch
+on:
+  pull_request:
+    branches: [ main ]
+
+# Build job
+jobs:
+  linter:
+    runs-on: ubuntu-latest
+    steps:
+      # Clone the repository
+      - name: Git checkout
+        uses: actions/checkout@v2
+
+      # Run Clang-format and Clang-tidy
+      - uses: shenxianpeng/cpp-linter-action@master
+        id: linter
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          style: file
+          extensions: "cpp,hpp"
+          version: "12"
+          ignore: ".github|vendor"
+
+      # Fail the job if the linter found errors
+      - name: Fail fast
+        if: steps.linter.outputs.checks-failed > 0
+        run: echo "Some files failed the linter checks" && exit 1
+      
