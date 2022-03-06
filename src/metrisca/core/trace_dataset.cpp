@@ -498,8 +498,8 @@ namespace metrisca {
 
         // Configure the dataset header
         out.m_Header._MagicValue = DATASET_HEADER_MAGIC_VALUE;
-        out.m_Header.CurrentResolution = this->CurrentResolution;
         out.m_Header.TimeResolution = this->TimeResolution;
+        out.m_Header.CurrentResolution = this->CurrentResolution;
         out.m_Header.NumberOfSamples = this->NumberOfSamples;
         out.m_Header.NumberOfTraces = this->NumberOfTraces;
         out.m_Header.EncryptionType = this->EncryptionType;
