@@ -24,6 +24,7 @@ jobs:
           extensions: "cpp,hpp"
           version: "12"
           ignore: ".github|vendor"
+          files-changed-only: false
 
       # Fail the job if the linter found errors
       - name: Fail fast
