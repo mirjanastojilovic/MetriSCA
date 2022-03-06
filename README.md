@@ -2,6 +2,10 @@
 
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.5778947.svg)](https://doi.org/10.5281/zenodo.5778947)
 ![Build workflow](https://github.com/mirjanastojilovic/MetriSCA/actions/workflows/build.yml/badge.svg)
+![Test workflow](https://github.com/mirjanastojilovic/MetriSCA/actions/workflows/test.yml/badge.svg)
+
+> :warning: This is the latest development version of the project. Please refer to this repository's tags or go to 
+> [Zenodo](https://zenodo.org/record/5778947)'s website for a list of published releases.
 
 The MetriSCA library contains various tools for side-channel analysis. It focuses on bringing performant C++ implementations
 of widely used metrics as well as being easily extendable to accommodate for new techniques and data formats.
@@ -60,6 +64,10 @@ configuration. The binaries can then be found in the `bin` folder.
 
 > Note: You can also provide other versions of Visual Studio to Premake to generate the corresponding solution files. See the Premake 
 > website for more info.
+
+### Running the tests
+
+To run the test suite, simply launch the `metrisca-tests` executable in `bin/<config>`.
 
 ## MetriSCAcli
 
