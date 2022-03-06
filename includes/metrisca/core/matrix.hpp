@@ -82,7 +82,7 @@ namespace metrisca {
             SetRow(row_index, (const ptr_type)row.data());
         }
 
-        /* Fill a row of this matrix with a constant value */
+        /// Fill a row of this matrix with a constant value
         void FillRow(size_type row_index, const value_type& value)
         {
             assert(row_index < this->m_Height);
@@ -101,7 +101,7 @@ namespace metrisca {
             return span.subspan(row_index * this->m_Width, this->m_Width);
         }
 
-        /* Extract a submatrix from this matrix. The row and column upper bounds are not inclusive. */
+        /// Extract a submatrix from this matrix. The row and column upper bounds are not inclusive.
         Matrix<value_type> Submatrix(size_type row_start, size_type col_start, size_type row_end, size_type col_end) const
         {
             assert(row_start < this->m_Height);

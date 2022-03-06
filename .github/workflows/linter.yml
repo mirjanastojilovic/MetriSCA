@@ -32,4 +32,3 @@ jobs:
       - name: Fail fast
         if: steps.linter.outputs.checks-failed > 0
         run: echo "Some files failed the linter checks" && exit 1
-      
