@@ -25,7 +25,6 @@ jobs:
         with:
           style: file
           extensions: "cpp,hpp"
-          version: "12"
           ignore: ".github|vendor"
           include-dirs: "includes|vendor/span-lite/includes"
 
