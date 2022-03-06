@@ -82,7 +82,7 @@ namespace metrisca {
             SetRow(row_index, (const ptr_type)row.data());
         }
 
-        /// Fill a row of this matrix with a constant value
+        /* Fill a row of this matrix with a constant value */
         void FillRow(size_type row_index, const value_type& value)
         {
             assert(row_index < this->m_Height);
