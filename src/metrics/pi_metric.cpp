@@ -106,10 +106,10 @@ namespace metrisca {
             return SCA_INVALID_ARGUMENT;
         }
 
-        if(trainingDatasetInfo.Header.PlaintextSize != trainingDatasetInfo.Header.PlaintextSize)
+        if(trainingDatasetInfo.Header.PlaintextSize != testingDatasetInfo.Header.PlaintextSize)
         {
             view.PrintError("Plaintext size missmatch. Training dataset plaintexts are of size " + std::to_string(trainingDatasetInfo.Header.PlaintextSize) + 
-                " and testing dataset plaintexts are of size " + std::to_string(trainingDatasetInfo.Header.PlaintextSize) + ".\n");
+                " and testing dataset plaintexts are of size " + std::to_string(testingDatasetInfo.Header.PlaintextSize) + ".\n");
             return SCA_INVALID_ARGUMENT;
         }
 
