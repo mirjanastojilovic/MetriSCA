@@ -15,6 +15,7 @@
 #include <functional>
 #include <ostream>
 #include <initializer_list>
+#include <sstream>
 
 namespace metrisca {
 

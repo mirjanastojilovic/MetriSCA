@@ -24,14 +24,23 @@ jobs:
         - {
             name: "Windows Latest MSVC",
             os: windows-latest,
-            premake: "premake5.exe",
-            generator: "vs2022"
+            cc: "cl",
+            cxx: "cl",
+            generator: "Visual Studio 17 2022"
           }
         - {
             name: "Ubuntu Latest GCC",
             os: ubuntu-latest,
-            premake: "premake5",
-            generator: "gmake2"
+            cc: "gcc",
+            cxx: "g++",
+            generator: "Ninja"
+          }
+        - {
+            name: "MacOS Latest Clang",
+            os: macos-latest,
+            cc: "clang",
+            cxx: "clang++",
+            generator: "Ninja"
           }
 
     steps:
@@ -47,18 +56,33 @@ jobs:
     # Setup Ubuntu environment
     - name: Configure Ubuntu environment
       if: startsWith(matrix.config.os, 'ubuntu')
-      run: chmod +x ./premake5
+      run: |
+        sudo apt-get update
+        sudo apt-get install ninja-build cmake
+        ninja --version
+        cmake --version
+        gcc --version
 
-    # Build project files
-    - name: Configure Project
-      run: ./${{ matrix.config.premake }} ${{ matrix.config.generator }}
+    # Setup MacOS environment
+    - name: Configure MacOS environment
+      if: startsWith(matrix.config.os, 'macos')
+      run: |
+        brew install cmake ninja
+        ninja --version
+        cmake --version
 
-    # Build project on Windows
-    - name: Build on Windows
-      if: startsWith(matrix.config.os, 'windows')
-      run: msbuild /m /p:Configuration=Release ./build/metrisca.sln
+    # Configure project
+    - name: Configure project
+      shell: bash
+      run: |
+        mkdir build
+        cmake \
+          -S . \
+          -B build \
+          -DCMAKE_BUILD_TYPE=Release \
+          -G "${{ matrix.config.generator }}" \
 
-    # Build project on Ubuntu
-    - name: Build on Ubuntu
-      if: startsWith(matrix.config.os, 'ubuntu')
-      run: make -C build config=release
+    # Build project
+    - name: Build project
+      shell: bash
+      run: cmake --build build --config Release
