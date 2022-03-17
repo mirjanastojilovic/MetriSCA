@@ -8,6 +8,10 @@
 
 #include "metrisca.hpp"
 
+#include "app/application.hpp"
+
+#include <iostream>
+
 using namespace metrisca;
 
 /*
@@ -85,17 +89,66 @@ using namespace metrisca;
  * }
  */
 
+/*
+int binloader(TraceDatasetBuilder& builder, const std::string& filename)
+{
+    uint32_t num_traces = 25000;
+    uint32_t num_samples = 256;
+
+    builder.EncryptionType = EncryptionAlgorithm::AES_128;
+    builder.KeyMode = KeyGenerationMode::FIXED;
+    builder.NumberOfSamples = num_samples;
+    builder.NumberOfTraces = num_traces;
+    builder.PlaintextMode = PlaintextGenerationMode::CHAINED;
+
+    std::ifstream file(filename);
+    if(!file)
+    {
+        return SCA_FILE_NOT_FOUND;
+    }
+
+    std::vector<int32_t> trace(num_samples);
+    std::vector<uint8_t> raw_trace(num_samples);
+    for(uint32_t t = 0; t < num_traces; ++t)
+    {
+        file.read((char*)raw_trace.data(), num_samples);
+        std::copy(raw_trace.begin(), raw_trace.end(), trace.begin());
+        builder.AddTrace(trace);
+    }
+
+    builder.AddPlaintext({0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 });
+    builder.AddKey({0x01, 0x23, 0x45, 0x67, 0x89, 0xAB, 0xCD, 0xEF, 0x12, 0x34, 0x56, 0x78, 0x9A, 0xBC, 0xDE, 0xF0 });
+
+    return SCA_OK;
+}
+*/
+
+class TestLoader : public LoaderPlugin {
+public:
+    virtual Result<void, Error> Init(const ArgumentList& args) override
+    {
+        return Error::FILE_NOT_FOUND;
+    }
+
+    virtual Result<void, Error> Load(TraceDatasetBuilder& builder) override
+    {
+        return Error::FILE_NOT_FOUND;
+    }
+};
+
 int main(int argc, char *argv[])
 {
-    Application* app = new CLIApplication();
+    Application& app = Application::The();
 
     // This line registers the loader into the application so that it can
     // be called using the command 'load'
-    // app->RegisterLoader("txtloader", txtloader);
+    // app.RegisterLoader("txtloader", txtloader);
+    METRISCA_REGISTER_PLUGIN(TestLoader, "testloader");
 
-    int result = app->Start(argc, argv);
+    auto result = app.Start(argc, argv);
 
-    delete app;
+    if (result.IsError())
+        return static_cast<int>(result.Error());
 
-    return result;
+    return 0;
 }

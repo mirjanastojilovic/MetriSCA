@@ -1,0 +1,74 @@
+name: Test
+
+# Triggers the workflow on push or pull request events but only for the main branch
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+  # Allows you to run this workflow manually from the Actions tab
+  workflow_dispatch:
+
+# Build job
+jobs:
+  test:
+    name: ${{ matrix.config.name }}
+    runs-on: ${{ matrix.config.os }}
+    strategy:
+      # Do not stop other jobs if one fails
+      fail-fast: false
+      matrix:
+        # List of config to run the build pipeline on
+        config:
+        - {
+            name: "Windows Latest MSVC",
+            os: windows-latest,
+            premake: "premake5.exe",
+            generator: "vs2022"
+          }
+        - {
+            name: "Ubuntu Latest GCC",
+            os: ubuntu-latest,
+            premake: "premake5",
+            generator: "gmake2"
+          }
+
+    steps:
+    # Clone the repository
+    - name: Git checkout
+      uses: actions/checkout@v2
+
+    # Setup windows environment
+    - name: Configure Windows environment
+      if: startsWith(matrix.config.os, 'windows')
+      uses: microsoft/setup-msbuild@v1.0.2
+
+    # Setup Ubuntu environment
+    - name: Configure Ubuntu environment
+      if: startsWith(matrix.config.os, 'ubuntu')
+      run: chmod +x ./premake5
+
+    # Build project files
+    - name: Configure Project
+      run: ./${{ matrix.config.premake }} ${{ matrix.config.generator }}
+
+    # Build tests on Windows
+    - name: Build tests on Windows
+      if: startsWith(matrix.config.os, 'windows')
+      run: msbuild /m /p:Configuration=Debug ./build/metrisca.sln /target:metrisca-tests
+
+    # Build tests on Ubuntu
+    - name: Build tests on Ubuntu
+      if: startsWith(matrix.config.os, 'ubuntu')
+      run: make -C build config=debug metrisca-tests
+
+    # Run tests on Windows
+    - name: Run tests on Windows
+      if: startsWith(matrix.config.os, 'windows')
+      run: bin/Debug/metrisca-tests.exe
+
+    # Run tests on Ubuntu
+    - name: Run tests on Ubuntu
+      if: startsWith(matrix.config.os, 'ubuntu')
+      run: ./bin/Debug/metrisca-tests

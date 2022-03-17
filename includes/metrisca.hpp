@@ -9,25 +9,25 @@
 #ifndef _METRISCA_HPP
 #define _METRISCA_HPP
 
-#include "version.hpp"
+#include "metrisca/version.hpp"
 
-#include "app/cli_application.hpp"
-#include "app/cli_view.hpp"
-#include "app/cli_model.hpp"
+#include "metrisca/core/plugin.hpp"
+#include "metrisca/core/matrix.hpp"
+#include "metrisca/core/errors.hpp"
+#include "metrisca/core/csv_writer.hpp"
+#include "metrisca/core/trace_dataset.hpp"
+#include "metrisca/core/arg_list.hpp"
+#include "metrisca/core/result.hpp"
+#include "metrisca/core/logger.hpp"
 
-#include "core/application.hpp"
-#include "core/matrix.hpp"
-#include "core/model.hpp"
-#include "core/distinguisher.hpp"
-#include "core/profiler.hpp"
-#include "core/fileloader.hpp"
-#include "core/metric.hpp"
-#include "core/errors.hpp"
-#include "core/csv_writer.hpp"
-#include "core/trace_dataset.hpp"
+#include "metrisca/distinguishers/distinguisher.hpp"
+#include "metrisca/loaders/loader.hpp"
+#include "metrisca/metrics/metric.hpp"
+#include "metrisca/models/model.hpp"
+#include "metrisca/profilers/profiler.hpp"
 
-#include "utils/numerics.hpp"
-#include "utils/crypto.hpp"
-#include "utils/math.hpp"
+#include "metrisca/utils/math.hpp"
+#include "metrisca/utils/crypto.hpp"
+#include "metrisca/utils/numerics.hpp"
 
 #endif

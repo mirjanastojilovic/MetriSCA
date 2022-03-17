@@ -2,6 +2,10 @@
 
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.5778947.svg)](https://doi.org/10.5281/zenodo.5778947)
 ![Build workflow](https://github.com/mirjanastojilovic/MetriSCA/actions/workflows/build.yml/badge.svg)
+![Test workflow](https://github.com/mirjanastojilovic/MetriSCA/actions/workflows/test.yml/badge.svg)
+
+> :warning: This is the latest development version of the project. Please refer to this repository's tags or go to 
+> [Zenodo](https://zenodo.org/record/5778947)'s website for a list of published releases.
 
 The MetriSCA library contains various tools for side-channel analysis. It focuses on bringing performant C++ implementations
 of widely used metrics as well as being easily extendable to accommodate for new techniques and data formats.
@@ -61,6 +65,10 @@ configuration. The binaries can then be found in the `bin` folder.
 > Note: You can also provide other versions of Visual Studio to Premake to generate the corresponding solution files. See the Premake 
 > website for more info.
 
+### Running the tests
+
+To run the test suite, simply launch the `metrisca-tests` executable in `bin/<config>`.
+
 ## MetriSCAcli
 
 MetriSCAcli is an interactive command-line interface that can load datasets of recorded traces and output metric results in CSV files.
@@ -76,71 +84,94 @@ sequential list of commands to execute. Lines that start with the character '#' 
 
 ### Loading a dataset
 
-By default, the tool does not come with a way to load in datasets of recorded traces. Fortunately, it is very straight forward to create on.
+By default, the tool does not come with a way to load in datasets of recorded traces. Fortunately, it is very straight forward to create one.
 Here is a code snippet describing how to write a loader for a text-based dataset format.
 
 ```C++
-int txtloader(TraceDatasetBuilder& builder, const std::string& filename) {
-    // The file contains 256 traces of 5000 samples each
-    unsigned int num_traces = 256;
-    unsigned int num_samples = 5000;
-
-    // Fill in the required fields in the builder
-    builder.EncryptionType = EncryptionAlgorithm::S_BOX;
-    builder.CurrentResolution = 1e-6;
-    builder.TimeResolution = 1e-3;
-    builder.PlaintextMode = PlaintextGenerationMode::RANDOM;
-    builder.PlaintextSize = 1;
-    builder.KeyMode = KeyGenerationMode::FIXED;
-    builder.KeySize = 1;
-    builder.NumberOfTraces = num_traces;
-    builder.NumberOfSamples = num_samples;
-
-    // Open the file
-    std::ifstream file(filename);
-    if(!file)
+class TxtLoader : public LoaderPlugin {
+public:
+    virtual Result<void, int> Init(const ArgumentList& args) override
     {
-        // If the file does not exist, return the appropriate error code.
-        return SCA_FILE_NOT_FOUND;
-    }
-
-    std::string line;
-    unsigned int line_count = 0;
-
-    std::vector<int> trace;
-    trace.resize(num_samples);
-
-    while (std::getline(file, line)) {
-        // Parse a line in the file and extract the trace measurement
-        std::string trace_val_str = line.substr(line.find(' ') + 1, line.size());
-        double trace_val = stod(trace_val_str);
-        // Convert the current measurement into an integer value and accumulate the trace
-        uint32_t sample_num = line_count % num_samples;
-        trace[sample_num] = (int)(trace_val / builder.CurrentResolution);
-
-        // Once the end of the trace is reached, add to the builder
-        if(sample_num == num_samples - 1)
-        {
-            builder.AddTrace(trace);
+        // Extract the necessary arguments from the command-line
+        auto filename = args.GetString("filename");
+        if (!filename.has_value()) {
+            METRISCA_ERROR("Missing filename argument!");
+            return SCA_MISSING_ARGUMENT;
         }
-        line_count++;
-    }
-    // The plaintexts go from 0 to 255 in order
-    for(unsigned int p = 0; p < 256; ++p)
-    {
-        builder.AddPlaintext({(unsigned char)p});
-    }
-    // The key is fixed to 0
-    builder.AddKey({(unsigned char)0});
 
-    return SCA_OK;
-}
+        m_Filename = filename.value();
+
+        return SCA_OK;
+    }
+
+    virtual Result<void, int> Load(TraceDatasetBuilder& builder) override
+    {
+        // The file contains 256 traces of 5000 samples each
+        unsigned int num_traces = 256;
+        unsigned int num_samples = 5000;
+
+        // Fill in the required fields in the builder
+        builder.EncryptionType = EncryptionAlgorithm::S_BOX;
+        builder.CurrentResolution = 1e-6;
+        builder.TimeResolution = 1e-3;
+        builder.PlaintextMode = PlaintextGenerationMode::RANDOM;
+        builder.PlaintextSize = 1;
+        builder.KeyMode = KeyGenerationMode::FIXED;
+        builder.KeySize = 1;
+        builder.NumberOfTraces = num_traces;
+        builder.NumberOfSamples = num_samples;
+
+        // Open the file
+        std::ifstream file(m_Filename);
+        if(!file)
+        {
+            // If the file does not exist, return the appropriate error code.
+            return SCA_FILE_NOT_FOUND;
+        }
+
+        std::string line;
+        unsigned int line_count = 0;
+
+        std::vector<int> trace;
+        trace.resize(num_samples);
+
+        while (std::getline(file, line)) {
+            // Parse a line in the file and extract the trace measurement
+            std::string trace_val_str = line.substr(line.find(' ') + 1, line.size());
+            double trace_val = stod(trace_val_str);
+            // Convert the current measurement into an integer value and accumulate the trace
+            uint32_t sample_num = line_count % num_samples;
+            trace[sample_num] = (int)(trace_val / builder.CurrentResolution);
+
+            // Once the end of the trace is reached, add to the builder
+            if(sample_num == num_samples - 1)
+            {
+                builder.AddTrace(trace);
+            }
+            line_count++;
+        }
+        // The plaintexts go from 0 to 255 in order
+        for(unsigned int p = 0; p < 256; ++p)
+        {
+            builder.AddPlaintext({(unsigned char)p});
+        }
+        // The key is fixed to 0
+        builder.AddKey({(unsigned char)0});
+
+        return SCA_OK;
+    }
+
+private:
+
+    // Store some loader dependent data
+    std::string m_Filename{};
+};
 ```
 
 Then, the loader can be registered into the application by adding this line to the `main` function.
 
 ```C++
-app->RegisterLoader("txtloader", txtloader);
+METRISCA_REGISTER_PLUGIN(TxtLoader, "txtloader");
 ```
 
 Et voilà! The loader can be used to load in your dataset.
@@ -183,8 +214,13 @@ help metric <name>
 
 ## Extending the library
 
-The library API is designed to be extended by the user. The `Application` class provides methods to inject new metrics and other functions into the
-command-line interface. Please have a look at `tools\scacli\main.cpp` more information and examples on how to get started.
+The library API is designed to be extended by the user. It exposes a plugin system which encapsulates most of the functions performed by the library (metrics,
+loaders, power models, etc...).
+
+A user-defined plugin must be a class that extends one of the following base classes: `LoaderPlugin`, `PowerModelPlugin`, `DistinguisherPlugin`, `MetricPlugin`
+or `ProfilerPlugin`. The `METRISCA_REGISTER_PLUGIN` can then be used to register the new plugin into the library.
+
+Plugins are constructed by the `PluginFactory::ConstructAs<T>` method which initializes a plugin using arguments passed via an `ArgumentList` object.
 
 ## License
 
@@ -204,13 +240,13 @@ If you use MetriSCA (v1.0) and publish your results, please cite it:
 
 ```
 @software{MetriSCAv1.0,
-	author = {Dorian Ros and Ognjen Glamo\v{c}anin and Mirjana Stojilovi\'{c}},
-	title = {{MetriSCA}: {A} Library of Metrics for Side-Channel Analysis},
-	month = dec,
-	year = 2021,
-	publisher = {Zenodo},
-	version = {v1.0},
-	doi = {10.5281/zenodo.5778947},
-	url = {https://doi.org/10.5281/zenodo.5778947}
+    author = {Dorian Ros and Ognjen Glamo\v{c}anin and Mirjana Stojilovi\'{c}},
+    title = {{MetriSCA}: {A} Library of Metrics for Side-Channel Analysis},
+    month = dec,
+    year = 2021,
+    publisher = {Zenodo},
+    version = {v1.0},
+    doi = {10.5281/zenodo.5778947},
+    url = {https://doi.org/10.5281/zenodo.5778947}
 }
 ```
