@@ -499,14 +499,14 @@ namespace metrisca {
         // Configure the dataset header
         result->m_Header._MagicValue = DATASET_HEADER_MAGIC_VALUE;
         result->m_Header.CurrentResolution = this->CurrentResolution;
-        result->m_Header.TimeResolution    = this->TimeResolution;
-        result->m_Header.NumberOfSamples   = this->NumberOfSamples;
-        result->m_Header.NumberOfTraces    = this->NumberOfTraces;
-        result->m_Header.EncryptionType    = this->EncryptionType;
-        result->m_Header.PlaintextSize     = this->PlaintextSize;
-        result->m_Header.PlaintextMode     = this->PlaintextMode;
-        result->m_Header.KeySize           = this->KeySize;
-        result->m_Header.KeyMode           = this->KeyMode;
+        result->m_Header.TimeResolution = this->TimeResolution;
+        result->m_Header.NumberOfSamples = this->NumberOfSamples;
+        result->m_Header.NumberOfTraces = this->NumberOfTraces;
+        result->m_Header.EncryptionType = this->EncryptionType;
+        result->m_Header.PlaintextSize = this->PlaintextSize;
+        result->m_Header.PlaintextMode = this->PlaintextMode;
+        result->m_Header.KeySize = this->KeySize;
+        result->m_Header.KeyMode = this->KeyMode;
 
         // Generate the plaintexts if the mode is set to CHAINED
         if(this->PlaintextMode == PlaintextGenerationMode::CHAINED)
