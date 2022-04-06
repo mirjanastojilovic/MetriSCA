@@ -111,7 +111,7 @@ namespace metrisca {
 
             // Guess subcommand
             {
-                ArgumentParser parser("score", "Compute an confidence ordered key guess for an increasing number of traces.", "metric");
+                ArgumentParser parser("guess", "Compute an confidence ordered key guess for an increasing number of traces.", "metric");
                 parser.AddPositionalArgument(ARG_NAME_DATASET, ArgumentType::Dataset, "The alias of the dataset to use.");
                 parser.AddOptionArgument(ARG_NAME_MODEL, { "-m", "--model" }, ArgumentType::String, "The identifier of the power model to use.");
                 parser.AddOptionArgument(ARG_NAME_DISTINGUISHER, { "-d", "--distinguisher" }, ArgumentType::String, "The identifier of the distinguisher to use.");
