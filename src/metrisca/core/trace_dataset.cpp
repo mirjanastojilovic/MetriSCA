@@ -13,7 +13,6 @@
 #include "metrisca/utils/numerics.hpp"
 
 #include <fstream>
-#include <cassert>
 #include <cstdint>
 
 namespace metrisca {
@@ -61,7 +60,7 @@ namespace metrisca {
         }
         else
         {
-            assert(false);
+            METRISCA_ASSERT_NOT_REACHED();
         }
     }
     
@@ -99,7 +98,7 @@ namespace metrisca {
                     plaintext_load_count = 1; // Load only the first plaintext and generate the others
                 } break;
                 default: {
-                    assert(false);
+                    METRISCA_ASSERT_NOT_REACHED();
                 } break;
             }
             result->m_Plaintexts = Matrix<uint8_t>(result->m_Header.PlaintextSize, plaintext_count);
@@ -113,7 +112,7 @@ namespace metrisca {
                     key_count = 1;
                 } break;
                 default: {
-                    assert(false);
+                    METRISCA_ASSERT_NOT_REACHED();
                 } break;
             }
             result->m_Keys = Matrix<uint8_t>(result->m_Header.KeySize, key_count);
@@ -161,7 +160,7 @@ namespace metrisca {
             return this->m_Plaintexts.GetRow(trace);
         }
         default: {
-            assert(false);
+            METRISCA_ASSERT_NOT_REACHED();
             return nonstd::span<const uint8_t>();
         }
         }
@@ -175,7 +174,7 @@ namespace metrisca {
             return this->m_Keys.GetRow(0);
         }
         default: {
-            assert(false);
+            METRISCA_ASSERT_NOT_REACHED();
             return nonstd::span<const uint8_t>();
         }
         }
@@ -200,7 +199,7 @@ namespace metrisca {
         }
         default:
         {
-            assert(false);
+            METRISCA_ASSERT_NOT_REACHED();
             return nonstd::span<const uint8_t>();
         }
         }
@@ -221,7 +220,7 @@ namespace metrisca {
 
     void TraceDataset::SplitDataset(TraceDataset& out1, TraceDataset& out2, uint32_t trace_split) const
     {
-        assert(trace_split < m_Header.NumberOfTraces);
+        METRISCA_ASSERT(trace_split < m_Header.NumberOfTraces);
 
         out1.m_Header = m_Header;
         out2.m_Header = m_Header;
@@ -260,7 +259,7 @@ namespace metrisca {
             out2.m_Ciphertexts = m_Ciphertexts.Submatrix(out1.m_Header.NumberOfTraces, 0, m_Header.NumberOfTraces, m_Header.PlaintextSize);
         } break;
         default: {
-            assert(false);
+            METRISCA_ASSERT_NOT_REACHED();
         }
         }
 
@@ -272,7 +271,7 @@ namespace metrisca {
             out2.m_Keys = m_Keys.Copy();
         } break;
         default: {
-            assert(false);
+            METRISCA_ASSERT_NOT_REACHED();
         }
         }
     }
@@ -293,8 +292,8 @@ namespace metrisca {
         } break;
         case EncryptionAlgorithm::AES_128: {
             // Copy key and first plaintext from provided user data
-            assert(this->m_Keys.GetWidth() == AES128_BLOCK_SIZE);
-            assert(this->m_Plaintexts.GetWidth() == AES128_BLOCK_SIZE);
+            METRISCA_ASSERT(this->m_Keys.GetWidth() == AES128_BLOCK_SIZE);
+            METRISCA_ASSERT(this->m_Plaintexts.GetWidth() == AES128_BLOCK_SIZE);
             std::array<uint8_t, AES128_BLOCK_SIZE> key;
             for (size_t i = 0; i < key.size(); ++i)
                 key[i] = this->m_Keys(0, i);
@@ -314,7 +313,7 @@ namespace metrisca {
             }
         } break;
         default: {
-            assert(false);
+            METRISCA_ASSERT_NOT_REACHED();
         }
         }
     }
@@ -338,7 +337,7 @@ namespace metrisca {
         } break;
         default:
         {
-            assert(false);
+            METRISCA_ASSERT_NOT_REACHED();
             return;
         }
         }
@@ -375,7 +374,7 @@ namespace metrisca {
         } break;
         default:
         {
-            assert(false);
+            METRISCA_ASSERT_NOT_REACHED();
         }
         }
     }
@@ -407,7 +406,7 @@ namespace metrisca {
             {
             case EncryptionAlgorithm::S_BOX: this->PlaintextSize = 1; break;
             case EncryptionAlgorithm::AES_128: this->PlaintextSize = 16; break;
-            default: assert(false); return Error::INVALID_DATA;
+            default: METRISCA_ASSERT_NOT_REACHED(); return Error::INVALID_DATA;
             }
         }
 
@@ -417,7 +416,7 @@ namespace metrisca {
             {
             case EncryptionAlgorithm::S_BOX: this->KeySize = 1; break;
             case EncryptionAlgorithm::AES_128: this->KeySize = 16; break;
-            default: assert(false); return Error::INVALID_DATA;
+            default: METRISCA_ASSERT_NOT_REACHED(); return Error::INVALID_DATA;
             }
         }
 
@@ -456,7 +455,7 @@ namespace metrisca {
                 plaintext_copy_count = 1;
             } break;
             default: {
-                assert(false);
+                METRISCA_ASSERT_NOT_REACHED();
                 return Error::INVALID_DATA;
             } break;
         }
@@ -480,7 +479,7 @@ namespace metrisca {
                 key_count = 1;
             } break;
             default: {
-                assert(false);
+                METRISCA_ASSERT_NOT_REACHED();
                 return Error::INVALID_DATA;
             } break;
         }

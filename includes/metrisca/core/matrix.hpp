@@ -11,10 +11,10 @@
 
 #include "metrisca/core/result.hpp"
 #include "metrisca/core/errors.hpp"
+#include "metrisca/core/assert.hpp"
 
 #include <vector>
 #include <cstdint>
-#include <cassert>
 #include <fstream>
 
 #include <nonstd/span.hpp>
@@ -63,21 +63,21 @@ namespace metrisca {
         /// Set a row of the matrix
         void SetRow(size_type row_index, const ptr_type row_data)
         {
-            assert(row_index < this->m_Height);
+            METRISCA_ASSERT(row_index < this->m_Height);
 
             std::copy(row_data, row_data + this->m_Width, this->m_Data.begin() + (row_index * this->m_Width));
         }
 
         void SetRow(size_type row_index, const std::vector<value_type>& row)
         {
-            assert(row.size() == this->m_Width);
+            METRISCA_ASSERT(row.size() == this->m_Width);
 
             SetRow(row_index, (const ptr_type)row.data());
         }
 
         void SetRow(size_type row_index, const nonstd::span<const value_type>& row)
         {
-            assert(row.size() == this->m_Width);
+            METRISCA_ASSERT(row.size() == this->m_Width);
 
             SetRow(row_index, (const ptr_type)row.data());
         }
@@ -85,7 +85,7 @@ namespace metrisca {
         /// Fill a row of this matrix with a constant value
         void FillRow(size_type row_index, const value_type& value)
         {
-            assert(row_index < this->m_Height);
+            METRISCA_ASSERT(row_index < this->m_Height);
 
             std::fill(this->m_Data.begin() + (row_index * this->m_Width), this->m_Data.begin() + ((row_index + 1) * this->m_Width), value);
         }
@@ -95,7 +95,7 @@ namespace metrisca {
         /// read-only view of the row.
         nonstd::span<const value_type> GetRow(size_type row_index) const
         {
-            assert(row_index < this->m_Height);
+            METRISCA_ASSERT(row_index < this->m_Height);
 
             nonstd::span<const value_type> span(this->m_Data);
             return span.subspan(row_index * this->m_Width, this->m_Width);
@@ -104,13 +104,13 @@ namespace metrisca {
         /// Extract a submatrix from this matrix. The row and column upper bounds are not inclusive.
         Matrix<value_type> Submatrix(size_type row_start, size_type col_start, size_type row_end, size_type col_end) const
         {
-            assert(row_start < this->m_Height);
-            assert(row_end <=  this->m_Height);
-            assert(row_start < row_end);
+            METRISCA_ASSERT(row_start < this->m_Height);
+            METRISCA_ASSERT(row_end <=  this->m_Height);
+            METRISCA_ASSERT(row_start < row_end);
 
-            assert(col_start < this->m_Width);
-            assert(col_end <= this->m_Width);
-            assert(col_start < col_end);
+            METRISCA_ASSERT(col_start < this->m_Width);
+            METRISCA_ASSERT(col_end <= this->m_Width);
+            METRISCA_ASSERT(col_start < col_end);
 
             Matrix<value_type> result(col_end - col_start, row_end - row_start);
 
@@ -127,12 +127,12 @@ namespace metrisca {
         /// Element-wise accessor
         value_type& operator()(size_type row, size_type col)
         {
-            assert(row < m_Height && col < m_Width);
+            METRISCA_ASSERT(row < m_Height && col < m_Width);
             return this->m_Data[row * m_Width + col];
         }
         const value_type& operator()(size_type row, size_type col) const
         {
-            assert(row < m_Height && col < m_Width);
+            METRISCA_ASSERT(row < m_Height && col < m_Width);
             return this->m_Data[row * m_Width + col];
         }
 
