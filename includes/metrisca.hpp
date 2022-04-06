@@ -11,6 +11,7 @@
 
 #include "metrisca/version.hpp"
 
+#include "metrisca/core/assert.hpp"
 #include "metrisca/core/plugin.hpp"
 #include "metrisca/core/matrix.hpp"
 #include "metrisca/core/errors.hpp"

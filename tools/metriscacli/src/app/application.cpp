@@ -428,6 +428,8 @@ namespace metrisca {
 
     Result<void, Error> Application::HandleMetric(const ArgumentList& arguments)
     {
+        METRISCA_ASSERT(arguments.HasArgument("subcommand"));
+
         auto metric_name = arguments.GetString("subcommand").value();
         auto metric_or_error = PluginFactory::The().ConstructAs<MetricPlugin>(PluginType::Metric, metric_name, arguments);
         if (metric_or_error.IsError())
