@@ -10,11 +10,11 @@
 
 #include "metrisca/core/matrix.hpp"
 #include "metrisca/core/result.hpp"
+#include "metrisca/core/assert.hpp"
 
 #include <nonstd/span.hpp>
 #include <vector>
 #include <string>
-#include <cassert>
 #include <unordered_map>
 #include <memory>
 
@@ -33,7 +33,7 @@ namespace metrisca {
         case EncryptionAlgorithm::UNKNOWN: return "unknown";
         case EncryptionAlgorithm::S_BOX: return "s-box";
         case EncryptionAlgorithm::AES_128: return "aes-128";
-        default: assert(false); return "unknown";
+        default: METRISCA_ASSERT_NOT_REACHED(); return "unknown";
         }
     }
 

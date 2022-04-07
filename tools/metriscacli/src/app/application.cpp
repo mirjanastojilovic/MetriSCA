@@ -428,28 +428,22 @@ namespace metrisca {
 
     Result<void, Error> Application::HandleMetric(const ArgumentList& arguments)
     {
-        if (arguments.HasArgument("subcommand"))
-        {
-            auto metric_name = arguments.GetString("subcommand").value();
-            auto metric_or_error = PluginFactory::The().ConstructAs<MetricPlugin>(PluginType::Metric, metric_name, arguments);
-            if (metric_or_error.IsError())
-            {
-                METRISCA_ERROR("Failed to initialize metric '{0}' with error code {1}: {2}. See 'help metric {0}'.", metric_name, metric_or_error.Error(), ErrorCause(metric_or_error.Error()));
-                return Error::INVALID_ARGUMENT;
-            }
+        METRISCA_ASSERT(arguments.HasArgument("subcommand"));
 
-            auto metric = metric_or_error.Value();
-            auto result = metric->Compute();
-            if (result.IsError())
-            {
-                METRISCA_ERROR("Metric failed to compute and exited with error code {}: {}", result.Error(), ErrorCause(result.Error()));
-                return result.Error();
-            }
-        }
-        else
+        auto metric_name = arguments.GetString("subcommand").value();
+        auto metric_or_error = PluginFactory::The().ConstructAs<MetricPlugin>(PluginType::Metric, metric_name, arguments);
+        if (metric_or_error.IsError())
         {
-            // FIXME: Handle this case.
-            METRISCA_CRITICAL("Hmm");
+            METRISCA_ERROR("Failed to initialize metric '{0}' with error code {1}: {2}. See 'help metric {0}'.", metric_name, metric_or_error.Error(), ErrorCause(metric_or_error.Error()));
+            return Error::INVALID_ARGUMENT;
+        }
+
+        auto metric = metric_or_error.Value();
+        auto result = metric->Compute();
+        if (result.IsError())
+        {
+            METRISCA_ERROR("Metric failed to compute and exited with error code {}: {}", result.Error(), ErrorCause(result.Error()));
+            return result.Error();
         }
 
         return {};
@@ -578,13 +572,9 @@ namespace metrisca {
             auto command = GetCommand(name);
             if (command)
             {
-                ArgumentList arguments;
-
                 // We use the default parser for that command unless we find a matching subparser.
-                // In that case, we use the subparser instead and we pass the name of that subparser
-                // as an argument in the argument list. This let's us keep track of which subcommand
-                // is being used.
                 auto parser = command->Parser;
+                std::string subparser_name;
                 std::vector<std::string> command_args(args.begin() + 1, args.end());
                 if (command->SubParsers.size() > 0 && args.size() > 1)
                 {
@@ -593,7 +583,7 @@ namespace metrisca {
                     if (subparser.has_value())
                     {
                         parser = subparser.value();
-                        arguments.SetString("subcommand", subcommand_name);
+                        subparser_name = subcommand_name;
                         command_args = std::vector<std::string>(args.begin() + 2, args.end());
                     }
                     else
@@ -603,6 +593,7 @@ namespace metrisca {
                     }
                 }
 
+                ArgumentList arguments;
                 try 
                 {
                     arguments = parser.Parse(command_args);
@@ -617,6 +608,12 @@ namespace metrisca {
                     std::cout << pe.what() << " See 'help " << parser.FullName() << "'." << std::endl << std::endl;
                     return Error::INVALID_COMMAND;
                 }
+
+                // If we found a matching subparser, we pass the name of that subparser
+                // as an argument in the argument list. This let's us keep track of which subcommand
+                // is being used in the command handler.
+                if (!subparser_name.empty())
+                    arguments.SetString("subcommand", subparser_name);
 
                 auto handler_result = command->Handler(arguments);
                 if (handler_result.IsError())
