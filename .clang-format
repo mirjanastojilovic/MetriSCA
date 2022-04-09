@@ -1,0 +1,15 @@
+﻿---
+BasedOnStyle: WebKit
+AlignAfterOpenBracket: Align
+AlignConsecutiveMacros: 'true'
+AlignConsecutiveAssignments: 'true'
+AlignConsecutiveDeclarations: 'false'
+AlignTrailingComments: 'true'
+AllowAllConstructorInitializersOnNextLine: 'false'
+AllowShortFunctionsOnASingleLine: All
+AlwaysBreakTemplateDeclarations: 'Yes'
+FixNamespaceComments: 'true'
+IndentPPDirectives: AfterHash
+Language: Cpp
+Standard: Cpp11
+UseTab: Never
