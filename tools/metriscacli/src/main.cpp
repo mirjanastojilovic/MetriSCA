@@ -10,7 +10,14 @@
 
 #include "app/application.hpp"
 
+#pragma warning(push, 0)
+#include <indicators/progress_bar.hpp>
+#include <indicators/block_progress_bar.hpp>
+#include <indicators/cursor_control.hpp>
+#pragma warning(pop)
+
 #include <iostream>
+#include <filesystem>
 
 using namespace metrisca;
 
@@ -123,17 +130,102 @@ int binloader(TraceDatasetBuilder& builder, const std::string& filename)
 }
 */
 
-class TestLoader : public LoaderPlugin {
+
+class CsvLoader : public LoaderPlugin {
 public:
     virtual Result<void, Error> Init(const ArgumentList& args) override
     {
-        return Error::FILE_NOT_FOUND;
+        auto file_name_arg = args.GetString("file");
+        if (!file_name_arg.has_value()) {
+            return Error::MISSING_ARGUMENT;
+        }
+
+        m_DbFilePath = file_name_arg.value();
+        if (!std::filesystem::exists(m_DbFilePath) || !std::filesystem::is_regular_file(m_DbFilePath)) {
+            return Error::FILE_NOT_FOUND;
+        }
+
+        return {};
     }
 
     virtual Result<void, Error> Load(TraceDatasetBuilder& builder) override
     {
-        return Error::FILE_NOT_FOUND;
+        uint32_t num_traces = 50000; 
+        uint32_t num_samples = 3000;
+
+        builder.EncryptionType = EncryptionAlgorithm::S_BOX;
+        builder.KeyMode = KeyGenerationMode::FIXED;
+        builder.KeySize = 100;
+        builder.PlaintextMode = PlaintextGenerationMode::FIXED;
+        builder.PlaintextSize = 100;
+        builder.NumberOfSamples = num_samples;
+        builder.NumberOfTraces = num_traces;
+
+        std::ifstream file(m_DbFilePath);
+        if (!file) {
+            METRISCA_ERROR("Failed to open file at path {} for reading", m_DbFilePath);
+            return Error::FILE_NOT_FOUND;
+        }
+
+        std::string line;
+        size_t line_number = 0;
+
+        indicators::show_console_cursor(false);
+        indicators::BlockProgressBar bar{
+            indicators::option::BarWidth(60),
+            indicators::option::MaxProgress(num_traces),
+            indicators::option::PrefixText("Extracting traces from CSV "),
+            indicators::option::ShowElapsedTime(true),
+            indicators::option::ShowRemainingTime(true)
+        };
+
+        while (std::getline(file, line)) {
+            line_number++;
+            bar.set_option(indicators::option::PostfixText{
+                    std::to_string(line_number) + "/" + std::to_string(num_traces)
+                });
+            bar.tick();
+
+            std::vector<int> trace;
+            trace.resize(num_samples, 0);
+
+            size_t it = 0, nextit;
+            for (size_t idx = 0; idx != num_samples; ++idx) {
+                nextit = line.find_first_of(',', it);
+
+                if (nextit != std::string::npos) {
+                    trace[idx] = (int)std::stol(line.substr(it, nextit - it));
+                    it = nextit + 1;
+                }
+                else {
+                    trace[idx] = (int)std::stol(line.substr(it));
+                    break;
+                }
+            }
+
+            builder.AddTrace(std::move(trace));
+        }
+
+        bar.mark_as_completed();
+        indicators::show_console_cursor(true);
+
+        {
+            std::vector<uint8_t> plaintext;
+            plaintext.resize(100, 0x0);
+            builder.AddPlaintext(std::move(plaintext));
+        }
+
+        {
+            std::vector<uint8_t> key;
+            key.resize(100, 0xcb);
+            builder.AddKey(std::move(key));
+        }
+
+        return {};
     }
+
+private:
+    std::string m_DbFilePath{};
 };
 
 int main(int argc, char *argv[])
@@ -143,7 +235,7 @@ int main(int argc, char *argv[])
     // This line registers the loader into the application so that it can
     // be called using the command 'load'
     // app.RegisterLoader("txtloader", txtloader);
-    METRISCA_REGISTER_PLUGIN(TestLoader, "testloader");
+    METRISCA_REGISTER_PLUGIN(CsvLoader, "csvloader");
 
     auto result = app.Start(argc, argv);
 

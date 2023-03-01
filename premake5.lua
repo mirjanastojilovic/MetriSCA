@@ -81,6 +81,7 @@ project "metrisca"
 
     UseSpanLite()
     UseSPDLOG()
+    UseIndicators()
 
     filter "action:vs*"
         vpaths {
@@ -100,6 +101,7 @@ function UseMetriSCA()
     }
     UseSpanLite()
     UseSPDLOG()
+    UseIndicators()
 end
 
 -- Build the tests
