@@ -18,6 +18,9 @@
 #include <fstream>
 #include <iostream>
 
+#include <stdlib.h> // for system(...)
+
+
 #define BIND_COMMAND_HANDLER(command) std::bind(&command, this, std::placeholders::_1)
 
 namespace metrisca {
@@ -26,6 +29,20 @@ namespace metrisca {
     {
         // Quit command
         RegisterCommand({"quit", "Terminate the application."}, BIND_COMMAND_HANDLER(Application::HandleQuit), "Terminate the application.");
+
+        // Clear command
+        // Each time I type clear on the console and I get an error I feel bad
+        {
+            ArgumentParser parser("clear", "Are you tired of cluttered screens and messy command histories? Fear not, for the \"clear\" command is here to save the day!");
+            RegisterCommand(parser, [](const ArgumentList& arguments) -> Result<void, Error> {
+#if defined(_WIN32)
+                system("cls");
+#elif defined (__LINUX__) || defined(__gnu_linux__) || defined(__linux__) || defined(__APPLE__)
+                system("clear");
+#endif
+                return {};
+            }, "Clear the text on the console so that your screen may rest");
+        }
 
         // Help command
         {
@@ -558,9 +575,32 @@ namespace metrisca {
         std::string line;
         if (input.length() == 0)
         {
-            std::cout << "metrisca>";
+            std::cout << "metrisca $ ";
+            bool hasNextLine;
 
-            std::getline(std::cin, line);
+            do {
+                std::string input;
+                std::getline(std::cin, input);
+
+                // Check that the line is not empty
+                size_t last_idx = input.find_last_not_of(" \t");
+                if (last_idx == std::string::npos) {
+                    return {};
+                }
+
+                // If the line terminates with \ then continue on the next line
+                hasNextLine = input[last_idx] == '\\';
+                if (hasNextLine)
+                {
+                    line += input.substr(0, last_idx);
+                    std::cout << "...          " << std::flush;
+                }
+                else
+                {
+                    line += input;
+                }
+
+            } while(hasNextLine);
         }
         else
             line = input;
