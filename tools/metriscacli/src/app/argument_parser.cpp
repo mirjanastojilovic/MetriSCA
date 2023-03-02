@@ -81,6 +81,24 @@ namespace metrisca {
         }
     }
 
+    static std::optional<std::tuple<uint32_t, uint32_t>> ConvertToTupleUInt32(const std::string& value)
+    {
+        size_t it = value.find_first_of(':');
+        if (it == std::string::npos) {
+            return {};
+        }
+
+        auto a = ConvertToUInt32(value.substr(0, it));
+        auto b = ConvertToUInt32(value.substr(it + 1));
+
+        if (!(a.has_value() && b.has_value())) {
+            return {};
+        }
+        
+        return std::make_tuple(a.value(), b.value());
+    }
+
+
     static std::optional<uint8_t> ConvertToUInt8(const std::string& value)
     {
         try
@@ -216,6 +234,9 @@ namespace metrisca {
         auto d = ConvertToDouble(value);
         if(d.has_value()) return ArgumentType::Double;
 
+        auto tu32 = ConvertToTupleUInt32(value);
+        if (tu32.has_value()) return ArgumentType::TupleUInt32;
+
         auto dataset = Application::The().GetDataset(value);
         if(dataset) return ArgumentType::Dataset;
 
@@ -254,6 +275,12 @@ namespace metrisca {
             auto v = ConvertToUInt32(value);
             if(!v.has_value()) throw BadTypeException(name, value, type);
             list.SetUInt32(name, v.value());
+        } break;
+        case ArgumentType::TupleUInt32:
+        {
+            auto v = ConvertToTupleUInt32(value);
+            if (!v.has_value()) throw BadTypeException(name, value, type);
+            list.SetTupleUInt32(name, v.value());
         } break;
         case ArgumentType::UInt8:
         {
@@ -319,27 +346,91 @@ namespace metrisca {
         std::vector<Token> tokens;
 
         bool isInToken = true;
-        size_t tokenStartIndex = 0;
+        bool isNextSpecialChar = false; // any character after a \             .
+        bool isInString = false; // is the current character within a string aka between two "
         std::string trimmed_args = Trim(args);
 
         if (!trimmed_args.empty()) {
+            std::string current_token;
             std::vector<std::string> string_tokens;
+
             for (size_t c = 0; c < trimmed_args.size(); ++c)
             {
-                char current = trimmed_args[c];
-                if (isInToken && std::isspace(static_cast<unsigned char>(current)))
+                const char current = trimmed_args[c];
+
+                if (!isInToken && !std::isspace(static_cast<unsigned char>(current)))
                 {
-                    string_tokens.push_back(trimmed_args.substr(tokenStartIndex, (c - tokenStartIndex)));
-                    isInToken = false;
-                }
-                else if (!isInToken && !std::isspace(static_cast<unsigned char>(current)))
-                {
-                    tokenStartIndex = c;
                     isInToken = true;
                 }
+                else if (isInToken && !isInString && !isNextSpecialChar && std::isspace(static_cast<unsigned char>(current)))
+                {
+                    isInToken = false;
+                    string_tokens.push_back(current_token);
+                    current_token.clear();
+                    continue; // Prevent further parsing of the current argument
+                }
+                
+                if (isInToken && !isNextSpecialChar)
+                {
+                    if (current == '"')
+                    {
+                        isInString = !isInString;
+                    }
+                    else if (current == '\\')
+                    {
+                        isNextSpecialChar = true;
+                    }
+                    else
+                    {
+                        current_token += current;
+                    }
+                }
+                else if (isInToken && isNextSpecialChar)
+                {
+                    switch (current)
+                    {
+                    case ' ':
+                        isNextSpecialChar = false;
+                        current_token += ' ';
+                        break;
+                    
+                    case 'n':
+                        isNextSpecialChar = false;
+                        current_token += '\n';
+                        break;
+
+                    case 'r':
+                        isNextSpecialChar = false;
+                        current_token += '\r';
+                        break;
+
+                    case 't':
+                        isNextSpecialChar = false;
+                        current_token += '\t';
+                        break;
+
+                    case '\\':
+                        isNextSpecialChar = false;
+                        current_token += '\\';
+                        break;
+
+                    default:
+                        const char msg[] = { current, 0x0 };
+                        throw BadSpecialCharException(current);
+                    }
+                }
             }
-            if (isInToken)
-                string_tokens.push_back(args.substr(tokenStartIndex));
+
+            if (isInToken) {
+                if (isInString) {
+                    throw ParserException("End of string was expected but instead got end of command");
+                }
+                if (isNextSpecialChar) {
+                    throw ParserException("Expected special character but instead got end of command");
+                }
+
+                string_tokens.push_back(current_token);
+            }
 
             for (const auto& string_token : string_tokens)
             {

@@ -149,6 +149,12 @@ namespace metrisca {
         /// Construct a new structured dataset
         Result<std::shared_ptr<TraceDataset>, Error> Build();
 
+        /**
+         * \brief Allocate the appropriate size for the internals in order to speed-up the loading process
+         * This function relies on the value of NumberOfTraces, NumberOfSamples, PlaintextSize and KeySize
+         */
+        void ReserveInternals();
+
     public:
         double TimeResolution{ 0.0 };               /// The time in seconds between two samples
         double CurrentResolution{ 0.0 };            /// The current resolution of the measurements

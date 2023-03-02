@@ -150,16 +150,17 @@ public:
 
     virtual Result<void, Error> Load(TraceDatasetBuilder& builder) override
     {
-        uint32_t num_traces = 50000; 
+        uint32_t num_traces = 1000; 
         uint32_t num_samples = 3000;
 
         builder.EncryptionType = EncryptionAlgorithm::S_BOX;
         builder.KeyMode = KeyGenerationMode::FIXED;
-        builder.KeySize = 100;
+        builder.KeySize = 1;
         builder.PlaintextMode = PlaintextGenerationMode::FIXED;
-        builder.PlaintextSize = 100;
+        builder.PlaintextSize = 1;
         builder.NumberOfSamples = num_samples;
         builder.NumberOfTraces = num_traces;
+        builder.ReserveInternals();
 
         std::ifstream file(m_DbFilePath);
         if (!file) {
@@ -185,6 +186,7 @@ public:
                     std::to_string(line_number) + "/" + std::to_string(num_traces)
                 });
             bar.tick();
+            if (line_number > num_traces) break;
 
             std::vector<int> trace;
             trace.resize(num_samples, 0);
@@ -211,13 +213,13 @@ public:
 
         {
             std::vector<uint8_t> plaintext;
-            plaintext.resize(100, 0x0);
+            plaintext.resize(1, 0x0);
             builder.AddPlaintext(std::move(plaintext));
         }
 
         {
             std::vector<uint8_t> key;
-            key.resize(100, 0xcb);
+            key.resize(1, 0xcb);
             builder.AddKey(std::move(key));
         }
 

@@ -31,7 +31,8 @@ namespace metrisca {
         Double,
         String,
         Boolean,
-        Dataset
+        Dataset,
+        TupleUInt32,
     };
 
     enum class ArgumentAction {
@@ -51,6 +52,7 @@ namespace metrisca {
         case ArgumentType::String: return "string";
         case ArgumentType::Boolean: return "boolean";
         case ArgumentType::Dataset: return "dataset";
+        case ArgumentType::TupleUInt32: return "uint32:uint32";
         }
         assert(false);
         return "unknown";
@@ -122,6 +124,15 @@ namespace metrisca {
         {
             std::stringstream msg;
             msg << "Invalid option string '" << option << "'. Must start with '-' or '--'.";
+            m_Msg = msg.str();
+        }
+    };
+
+    struct BadSpecialCharException : public ParserException {
+        explicit BadSpecialCharException(const char ch)
+        {
+            std::stringstream msg;
+            msg << "Unknown special character '" << ch << "'.";
             m_Msg = msg.str();
         }
     };
