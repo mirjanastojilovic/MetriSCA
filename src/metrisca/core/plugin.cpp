@@ -18,6 +18,7 @@
 #include "metrisca/metrics/score_metric.hpp"
 #include "metrisca/metrics/success_rate_metric.hpp"
 #include "metrisca/metrics/ttest_metric.hpp"
+#include "metrisca/metrics/key_enumeration_metric.hpp"
 
 #include "metrisca/models/hamming_distance_model.hpp"
 #include "metrisca/models/hamming_weight_model.hpp"
@@ -41,6 +42,7 @@ namespace metrisca {
         METRISCA_REGISTER_PLUGIN(ScoreMetric, "score");
         METRISCA_REGISTER_PLUGIN(SuccessRateMetric, "success_rate");
         METRISCA_REGISTER_PLUGIN(TTestMetric, "ttest");
+        METRISCA_REGISTER_PLUGIN(KeyEnumerationMetric, "key_enumeration");
 
         METRISCA_REGISTER_PLUGIN(HammingDistanceModel, "hamming_distance");
         METRISCA_REGISTER_PLUGIN(HammingWeightModel, "hamming_weight");

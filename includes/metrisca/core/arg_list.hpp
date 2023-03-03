@@ -16,6 +16,7 @@
 #include <optional>
 #include <memory>
 #include <tuple>
+#include <vector>
 
 namespace metrisca {
 
@@ -77,6 +78,7 @@ namespace metrisca {
 
 #define ARG_NAME_SAMPLE_START             "start"
 #define ARG_NAME_SAMPLE_END               "end"
+#define ARG_NAME_SAMPLE_TUPLE             "start:end"
 #define ARG_NAME_DATASET                  "dataset"
 #define ARG_NAME_MODEL                    "model"
 #define ARG_NAME_DISTINGUISHER            "distinguisher"
@@ -95,5 +97,6 @@ namespace metrisca {
 #define ARG_NAME_TESTING_DATASET          "testing"
 #define ARG_NAME_FIXED_DATASET            "fixed"
 #define ARG_NAME_RANDOM_DATASET           "random"
-
+#define ARG_NAME_KEY_COUNT                "key-count"
+#define ARG_NAME_SUBKEY                   "subkey"
 }
