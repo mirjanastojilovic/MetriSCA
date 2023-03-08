@@ -19,6 +19,8 @@
 
 #include <nonstd/span.hpp>
 
+#define METRISCA_SQRT_2 1.4142135623730950488
+
 namespace metrisca { namespace numerics {
 
     /// Generate linearly a range of values between two end points

@@ -13,6 +13,7 @@
 
 #include <vector>
 #include <memory>
+#include <tuple>
 
 namespace metrisca {
 
@@ -24,6 +25,8 @@ namespace metrisca {
         virtual Result<void, Error> Compute() override;
 
     private:
+        Result<void, Error> parseSubkey(const ArgumentList& subkey, size_t idx);
+
         struct KeyByteDescriptor {
             KeyByteDescriptor() {}
 
@@ -32,6 +35,10 @@ namespace metrisca {
                 , SampleStart(sampleStart)
                 , SampleEnd(sampleEnd)
             {}
+
+            inline bool IsInitialized() const {
+                return Model != nullptr;
+            }
 
             std::shared_ptr<PowerModelPlugin> Model{ nullptr };
             uint32_t SampleStart = 0;
@@ -42,7 +49,9 @@ namespace metrisca {
         std::shared_ptr<TraceDataset> m_Dataset{ nullptr };
         uint32_t m_TraceCount{};
         uint32_t m_TraceStep{};
+        uint32_t m_ByteIndex{};
         uint32_t m_KeyCount{};
+        uint32_t m_BinSize{};
     };
 
 }

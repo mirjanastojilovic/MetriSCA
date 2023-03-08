@@ -97,6 +97,7 @@ namespace metrisca {
 #define ARG_NAME_TESTING_DATASET          "testing"
 #define ARG_NAME_FIXED_DATASET            "fixed"
 #define ARG_NAME_RANDOM_DATASET           "random"
-#define ARG_NAME_KEY_COUNT                "key-count"
+#define ARG_NAME_ENUMERATED_KEY_COUNT     "enumerated-key-count"
 #define ARG_NAME_SUBKEY                   "subkey"
+#define ARG_NAME_BIN_SIZE                 "bin-size"
 }

@@ -7,14 +7,9 @@
  */
 
 #include "metrisca.hpp"
+#include "metrisca/core/indicators.hpp"
 
 #include "app/application.hpp"
-
-#pragma warning(push, 0)
-#include <indicators/progress_bar.hpp>
-#include <indicators/block_progress_bar.hpp>
-#include <indicators/cursor_control.hpp>
-#pragma warning(pop)
 
 #include <iostream>
 #include <filesystem>
