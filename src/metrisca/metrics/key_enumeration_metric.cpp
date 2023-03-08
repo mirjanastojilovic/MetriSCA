@@ -259,6 +259,8 @@ namespace metrisca {
 
             for (uint32_t trace_count_idx = 0, it = 0; trace_count_idx < trace_counts.size(); trace_count_idx++)
             {
+                const uint32_t current_trace_count = trace_counts[trace_count_idx];
+
                 for (uint32_t key_byte_idx = 0; key_byte_idx != m_KeyByteDescriptors.size(); ++key_byte_idx)
                 {
                     auto& keyByteDescriptor = m_KeyByteDescriptors[key_byte_idx];
@@ -266,64 +268,95 @@ namespace metrisca {
 
                     for (uint32_t key_idx = 0; key_idx != 256; key_idx++, it++)
                     {
+                        // update the loading bar to give feedback to the awaiting user
                         mainbar.set_option(indicators::option::PostfixText{
                                 "Model evaluation " + std::to_string(it + 1) + "/" + std::to_string(m_KeyByteDescriptors.size() * 256 * trace_counts.size()) 
                                     + " subkey " + std::to_string(key_byte_idx) + "/" + std::to_string(m_KeyByteDescriptors.size())
                             });
                         mainbar.tick();
 
-
-                        // Compute the standard deviation for the current samples
-                        const int expectedMean = modelledLeakageList[key_byte_idx].GetRow(0)[key_idx];
-                        double stdDev = 0.0;
-                        for (uint32_t sampleIdx = keyByteDescriptor.SampleStart; sampleIdx != keyByteDescriptor.SampleEnd; ++sampleIdx) {
-                            nonstd::span_lite::span<const int> sample = m_Dataset->GetSample(sampleIdx).subspan(0, trace_counts[trace_count_idx]);
-                            stdDev += numerics::Variance(sample.subspan(0, trace_counts[trace_count_idx]), (double)expectedMean);
-                        }
-                        stdDev = std::sqrt(stdDev / (keyByteDescriptor.SampleEnd - keyByteDescriptor.SampleStart));
-
-                        // Compute the probability of the model under the assumption the noise is gaussian and null-mean
-                        // Do not use logarithm !!
-                        // https://cs.stackexchange.com/questions/91538/why-is-adding-log-probabilities-considered-numerically-stable
-                        double probability = 1.0;
-                        for (uint32_t sampleIdx = keyByteDescriptor.SampleStart; sampleIdx != keyByteDescriptor.SampleEnd; ++sampleIdx) {
-                            nonstd::span_lite::span<const int> sample = m_Dataset->GetSample(sampleIdx).subspan(0, trace_counts[trace_count_idx]);
-
-                            for (size_t idx = 0; idx != sample.size(); idx++) {
-                                const double bin = (double)(sample[idx] - expectedMean) / ((double)m_BinSize);
-
-                                double pAtLeastThisBin = 0.5 * lazyErf((bin - 0.5) / (stdDev * METRISCA_SQRT_2));
-                                if (bin <= 0.5) {
-                                    pAtLeastThisBin = 0.5 + pAtLeastThisBin;
-                                }
-                                else {
-                                    pAtLeastThisBin = 0.5 - pAtLeastThisBin;
-                                }
-
-                                double pNotNextBinOrHigher = 0.5 * lazyErf((bin + 0.5) / (stdDev * METRISCA_SQRT_2));
-                                if (bin <= -0.5) {
-                                    pNotNextBinOrHigher = 0.5 + pNotNextBinOrHigher;
-                                }
-                                else {
-                                    pNotNextBinOrHigher = 0.5 - pNotNextBinOrHigher;
-                                }
-
-                                //tex:
-                                // $$\mathbb{P}[l_k \ | \ \theta_k]$$
-                                // ASSUMPTION: $\forall i \neq j \in \mathbb{N}, \quad (l_k \ | \ \theta_k) \perp (l_j \ | \ \theta_k) $
-                                probability *= (pAtLeastThisBin - pNotNextBinOrHigher);
-                            }
-                        }
-                        
+                        // for each sample compute the hypothesis probability
                         //tex:
-                        // probability : $P[\{l_0 \cdots l_N\} \ | \ \theta_k] \ \cdot \ P[\theta_k] $
-                        partialKeyProbabilityEstimator(trace_count_idx, key_byte_idx * 256 + key_idx) = probability / 256.0;
-                        renormalizationTerm += probability;
+                        // $$P[\theta_k | \{ l_{0;i} \cdots l_{N;i} \}]$$
+                        // where $i \in 0 \cdots M$ is the current trace index
+                        for (size_t trace_idx = 0; trace_idx != current_trace_count; trace_idx++) {
+                            // Compute the expected mean (under the assumption of a certain model)
+                            // const int expectedMean = modelledLeakageList[key_byte_idx].GetRow(0)[key_idx]
+                            const double expectedMean = (double) modelledLeakageList[key_byte_idx](trace_idx, key_idx);
+
+                            // Compute the standard devation for the current subkey on the current trace
+                            double stdDev = 0.0;
+                            for (uint32_t sampleIdx = keyByteDescriptor.SampleStart; sampleIdx != keyByteDescriptor.SampleEnd; ++sampleIdx) {
+                                double value = (double) m_Dataset->GetSample(sampleIdx)(trace_idx);
+                                stdDev += (value - expectedMean) * (value - expectedMean);
+                            }
+                            stdDev = std::sqrt(stdDev);
+
+                            // Compute the probability of the model under the assumption the noise is gaussian an null 
+                        }
+
                     }
 
-                    for (uint32_t key_idx = 0; key_idx != 256; key_idx++) {
-                        partialKeyProbabilityEstimator(trace_count_idx, key_byte_idx * 256 + key_idx) /= renormalizationTerm;
-                    }
+                    // for (uint32_t key_idx = 0; key_idx != 256; key_idx++, it++)
+                    // {
+                    //     mainbar.set_option(indicators::option::PostfixText{
+                    //             "Model evaluation " + std::to_string(it + 1) + "/" + std::to_string(m_KeyByteDescriptors.size() * 256 * trace_counts.size()) 
+                    //                 + " subkey " + std::to_string(key_byte_idx) + "/" + std::to_string(m_KeyByteDescriptors.size())
+                    //         });
+                    //     mainbar.tick();
+
+
+                    //     // Compute the standard deviation for the current samples
+                    //     const int expectedMean = modelledLeakageList[key_byte_idx].GetRow(0)[key_idx];
+                    //     double stdDev = 0.0;
+                    //     for (uint32_t sampleIdx = keyByteDescriptor.SampleStart; sampleIdx != keyByteDescriptor.SampleEnd; ++sampleIdx) {
+                    //         nonstd::span_lite::span<const int> sample = m_Dataset->GetSample(sampleIdx).subspan(0, trace_counts[trace_count_idx]);
+                    //         stdDev += numerics::Variance(sample.subspan(0, trace_counts[trace_count_idx]), (double)expectedMean);
+                    //     }
+                    //     stdDev = std::sqrt(stdDev / (keyByteDescriptor.SampleEnd - keyByteDescriptor.SampleStart));
+
+                    //     // Compute the probability of the model under the assumption the noise is gaussian and null-mean
+                    //     // Do not use logarithm !!
+                    //     // https://cs.stackexchange.com/questions/91538/why-is-adding-log-probabilities-considered-numerically-stable
+                    //     double probability = 1.0;
+                    //     for (uint32_t sampleIdx = keyByteDescriptor.SampleStart; sampleIdx != keyByteDescriptor.SampleEnd; ++sampleIdx) {
+                    //         nonstd::span_lite::span<const int> sample = m_Dataset->GetSample(sampleIdx).subspan(0, trace_counts[trace_count_idx]);
+
+                    //         for (size_t idx = 0; idx != sample.size(); idx++) {
+                    //             const double bin = (double)(sample[idx] - expectedMean) / ((double)m_BinSize);
+
+                    //             double pAtLeastThisBin = 0.5 * lazyErf((bin - 0.5) / (stdDev * METRISCA_SQRT_2));
+                    //             if (bin <= 0.5) {
+                    //                 pAtLeastThisBin = 0.5 + pAtLeastThisBin;
+                    //             }
+                    //             else {
+                    //                 pAtLeastThisBin = 0.5 - pAtLeastThisBin;
+                    //             }
+
+                    //             double pNotNextBinOrHigher = 0.5 * lazyErf((bin + 0.5) / (stdDev * METRISCA_SQRT_2));
+                    //             if (bin <= -0.5) {
+                    //                 pNotNextBinOrHigher = 0.5 + pNotNextBinOrHigher;
+                    //             }
+                    //             else {
+                    //                 pNotNextBinOrHigher = 0.5 - pNotNextBinOrHigher;
+                    //             }
+
+                    //             //tex:
+                    //             // $$\mathbb{P}[l_k \ | \ \theta_k]$$
+                    //             // ASSUMPTION: $\forall i \neq j \in \mathbb{N}, \quad (l_k \ | \ \theta_k) \perp (l_j \ | \ \theta_k) $
+                    //             probability *= (pAtLeastThisBin - pNotNextBinOrHigher);
+                    //         }
+                    //     }
+                        
+                    //     //tex:
+                    //     // probability : $P[\{l_0 \cdots l_N\} \ | \ \theta_k] \ \cdot \ P[\theta_k] $
+                    //     partialKeyProbabilityEstimator(trace_count_idx, key_byte_idx * 256 + key_idx) = probability / 256.0;
+                    //     renormalizationTerm += probability;
+                    // }
+
+                    // for (uint32_t key_idx = 0; key_idx != 256; key_idx++) {
+                    //     partialKeyProbabilityEstimator(trace_count_idx, key_byte_idx * 256 + key_idx) /= renormalizationTerm;
+                    // }
                 }
             }
 
