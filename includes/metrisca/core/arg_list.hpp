@@ -15,7 +15,6 @@
 #include <any>
 #include <optional>
 #include <memory>
-#include <tuple>
 #include <vector>
 
 namespace metrisca {
@@ -32,7 +31,6 @@ namespace metrisca {
         std::optional<std::shared_ptr<TraceDataset>> GetDataset(const std::string& name) const { return Get<std::shared_ptr<TraceDataset>>(name); }
         std::optional<std::string> GetString(const std::string& name) const { return Get<std::string>(name); }
         std::optional<double> GetDouble(const std::string& name) const { return Get<double>(name); }
-        std::optional<std::tuple<uint32_t, uint32_t>> GetTupleUInt32(const std::string& name) const { return Get<std::tuple<uint32_t, uint32_t>>(name); }
         std::optional<std::vector<ArgumentList>> GetSubList(const std::string& name) const { return Get<std::vector<ArgumentList>>(name); }
 
         void SetUInt8(const std::string& name, uint8_t value) { Set<uint8_t>(name, value); }
@@ -42,7 +40,6 @@ namespace metrisca {
         void SetDataset(const std::string& name, std::shared_ptr<TraceDataset> value) { Set<std::shared_ptr<TraceDataset>>(name, value); }
         void SetString(const std::string& name, std::string value) { Set<std::string>(name, value); }
         void SetDouble(const std::string& name, double value) { Set<double>(name, value); }
-        void SetTupleUInt32(const std::string& name, std::tuple<uint32_t, uint32_t> value) { Set<std::tuple<uint32_t, uint32_t>>(name, value); }
         void SetSubList(const std::string& name, const std::vector<ArgumentList>& sublist) { Set<std::vector<ArgumentList>>(name, sublist); }
 
         bool HasArgument(const std::string& name) const { return m_Arguments.find(name) != m_Arguments.end(); }
@@ -78,7 +75,6 @@ namespace metrisca {
 
 #define ARG_NAME_SAMPLE_START             "start"
 #define ARG_NAME_SAMPLE_END               "end"
-#define ARG_NAME_SAMPLE_TUPLE             "start:end"
 #define ARG_NAME_DATASET                  "dataset"
 #define ARG_NAME_MODEL                    "model"
 #define ARG_NAME_DISTINGUISHER            "distinguisher"

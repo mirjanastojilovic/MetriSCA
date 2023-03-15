@@ -81,24 +81,6 @@ namespace metrisca {
         }
     }
 
-    static std::optional<std::tuple<uint32_t, uint32_t>> ConvertToTupleUInt32(const std::string& value)
-    {
-        size_t it = value.find_first_of(':');
-        if (it == std::string::npos) {
-            return {};
-        }
-
-        auto a = ConvertToUInt32(value.substr(0, it));
-        auto b = ConvertToUInt32(value.substr(it + 1));
-
-        if (!(a.has_value() && b.has_value())) {
-            return {};
-        }
-
-        return std::make_tuple(a.value(), b.value());
-    }
-
-
     static std::optional<uint8_t> ConvertToUInt8(const std::string& value)
     {
         try
@@ -268,9 +250,6 @@ namespace metrisca {
         auto d = ConvertToDouble(value);
         if (d.has_value()) return ArgumentType::Double;
 
-        auto tu32 = ConvertToTupleUInt32(value);
-        if (tu32.has_value()) return ArgumentType::TupleUInt32;
-
         auto dataset = Application::The().GetDataset(value);
         if (dataset) return ArgumentType::Dataset;
 
@@ -309,12 +288,6 @@ namespace metrisca {
             auto v = ConvertToUInt32(value);
             if (!v.has_value()) throw BadTypeException(name, value, type);
             list.SetUInt32(name, v.value());
-        } break;
-        case ArgumentType::TupleUInt32:
-        {
-            auto v = ConvertToTupleUInt32(value);
-            if (!v.has_value()) throw BadTypeException(name, value, type);
-            list.SetTupleUInt32(name, v.value());
         } break;
         case ArgumentType::UInt8:
         {

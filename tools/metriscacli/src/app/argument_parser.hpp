@@ -33,7 +33,6 @@ namespace metrisca {
         String,
         Boolean,
         Dataset,
-        TupleUInt32,
     };
 
     enum class ArgumentAction {
@@ -54,7 +53,6 @@ namespace metrisca {
         case ArgumentType::String: return "string";
         case ArgumentType::Boolean: return "boolean";
         case ArgumentType::Dataset: return "dataset";
-        case ArgumentType::TupleUInt32: return "uint32:uint32";
         }
         assert(false);
         return "unknown";

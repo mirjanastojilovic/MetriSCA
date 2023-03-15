@@ -96,26 +96,6 @@ namespace metrisca {
             parser.AddPositionalArgument("args...", ArgumentType::String, "Additional metric arguments.", false);
             auto command = RegisterCommand(parser, BIND_COMMAND_HANDLER(Application::HandleMetric), "Compute metrics on a dataset.");
 
-            // Key enumeration subcommad
-            {
-                ArgumentParser parser("key_enumeration", "Perform full key recovery enumeration for an increasing number of traces", "metric");
-                parser.AddPositionalArgument(ARG_NAME_DATASET, ArgumentType::Dataset, "The alias of the dataset to use");
-                parser.AddOptionArgument(ARG_NAME_TRACE_COUNT, { "-t", "--traces" }, ArgumentType::UInt32, "The maximum number of traces to use during analysis. Default: #traces in the dataset.", false);
-                parser.AddOptionArgument(ARG_NAME_BYTE_INDEX, { "-b", "--byte-index" }, ArgumentType::UInt32, "The index of the byte within the plaintext we are concidering", "0");
-                parser.AddOptionArgument(ARG_NAME_BIN_SIZE, { "-bs", "--bin-size" }, ArgumentType::UInt32, "The size of a bin (linked with the resolution of values within the dataset)", "1");
-                parser.AddOptionArgument(ARG_NAME_TRACE_STEP, { "-ts", "--step" }, ArgumentType::UInt32, "If greater than zero, computes the same metric with an increasing number of traces starting at <STEP> up to <TRACES>", "0");
-                parser.AddOptionArgument(ARG_NAME_OUTPUT_FILE, { "-o", "--out" }, ArgumentType::String, "The path of the output CSV file to save the result into.");
-                parser.AddOptionArgument(ARG_NAME_ENUMERATED_KEY_COUNT, { "-kc", "--key-count" }, ArgumentType::UInt32, "Number of key to be enumerated by this metric.", false);
-                parser.AddOptionArgumentList(ARG_NAME_SUBKEY, {"-sk", "--subkey"},
-                                             {{ARG_NAME_BYTE_INDEX, ArgumentType::UInt32},
-                                              {ARG_NAME_MODEL, ArgumentType::String},
-                                              {ARG_NAME_SAMPLE_TUPLE, ArgumentType::TupleUInt32}},
-                                             "List the configuration for each subkey, syntax is <key byte index> <model> <sample start>:<sample end>",
-                                             false,
-                                             true);
-                command->AddSubParser(parser);
-            }
-
             // Rank subcommand
             {
                 ArgumentParser parser("rank", "Compute the prediction rank of each key for an increasing number of traces.", "metric");
