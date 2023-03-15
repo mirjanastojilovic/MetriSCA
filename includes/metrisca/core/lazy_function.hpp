@@ -73,7 +73,15 @@ namespace metrisca {
         : m_Callback(callback)
         , m_ComputedValues{}
         {
-            METRISCA_ASSERT(callback != nullptr);   
+            METRISCA_ASSERT(m_Callback != nullptr);   
+        }
+
+        template<typename Functor>
+        inline LazyFunction(Functor arg)
+        : m_Callback(arg)
+        , m_ComputedValues{}
+        {
+            METRISCA_ASSERT(m_Callback != nullptr);
         }
 
         inline Output get(const Args&... arguments)

@@ -5,7 +5,6 @@
  * All rights reserved. Use of this source code is governed by a
  * BSD-style license that can be found in the LICENSE.md file.
  */
-
 #include "metrisca/distinguishers/pearson_distinguisher.hpp"
 
 #include "metrisca/utils/numerics.hpp"
@@ -22,7 +21,6 @@ namespace metrisca {
         if(model_or_error.IsError())
             return model_or_error.Error();
         auto model = model_or_error.Value();
-
 
         // Compute the pearson correlation coefficient between the model and the sample.
         // This operation is performed on every sample in the range.

@@ -206,17 +206,11 @@ public:
         bar.mark_as_completed();
         indicators::show_console_cursor(true);
 
-        {
-            std::vector<uint8_t> plaintext;
-            plaintext.resize(1, 0x0);
-            builder.AddPlaintext(std::move(plaintext));
-        }
+        std::vector<uint8_t> plainText{129};
+        builder.AddPlaintext(std::move(plainText));
 
-        {
-            std::vector<uint8_t> key;
-            key.resize(1, 0xcb);
-            builder.AddKey(std::move(key));
-        }
+        std::vector<uint8_t> key{203};
+        builder.AddKey(std::move(key));
 
         return {};
     }

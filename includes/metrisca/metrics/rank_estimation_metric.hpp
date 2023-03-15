@@ -14,7 +14,13 @@ namespace metrisca {
 
     class RankEstimationMetric : public BasicMetricPlugin {
     public:
+
+        virtual Result<void, Error> Init(const ArgumentList& args) override;
+
         virtual Result<void, Error> Compute() override;
+
+    private:
+        std::vector<uint8_t> m_Key{};
     };
 
 }
