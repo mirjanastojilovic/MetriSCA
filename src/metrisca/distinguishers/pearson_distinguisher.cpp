@@ -9,6 +9,7 @@
 
 #include "metrisca/utils/numerics.hpp"
 #include "metrisca/core/trace_dataset.hpp"
+#include "metrisca/core/indicators.hpp"
 #include "metrisca/models/model.hpp"
 
 namespace metrisca {
@@ -22,10 +23,25 @@ namespace metrisca {
             return model_or_error.Error();
         auto model = model_or_error.Value();
 
+        // Display the indicator
+        indicators::BlockProgressBar progress_bar{
+            indicators::option::BarWidth(60),
+            indicators::option::PrefixText("Computing pearson correlation coefficients"),
+            indicators::option::MaxProgress(m_SampleCount),
+            indicators::option::Start{"["},
+            indicators::option::End{"]"},
+            indicators::option::ShowElapsedTime{ true },
+            indicators::option::ShowRemainingTime{ true }
+        };
+
         // Compute the pearson correlation coefficient between the model and the sample.
         // This operation is performed on every sample in the range.
         for(uint32_t s = m_SampleStart; s < m_SampleStart + m_SampleCount; s++)
         {
+            if (s % (m_SampleCount / 200 + 1) == 0) {
+                progress_bar.set_progress((float) s);
+            }
+
             nonstd::span<const int32_t> sample = m_Dataset->GetSample(s);
             for(uint32_t k = 0; k < 256; k++) 
             {
@@ -54,6 +70,9 @@ namespace metrisca {
                 }
             }
         }
+
+        // Complete progress bar
+        progress_bar.mark_as_completed();
 
         return result;
     }

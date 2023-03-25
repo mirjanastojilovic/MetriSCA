@@ -24,6 +24,7 @@ namespace metrisca {
         INVALID_DATA,
         UNKNOWN_PLUGIN,
         MISSING_ARGUMENT,
+        IO_FAILURE,
     };
 
     /// Utility method to convert an error into a human-readable string
@@ -40,6 +41,7 @@ namespace metrisca {
         case Error::INVALID_DATA:          return "invalid data";
         case Error::UNKNOWN_PLUGIN:        return "unknown plugin";
         case Error::MISSING_ARGUMENT:      return "missing argument";
+        case Error::IO_FAILURE:            return "input/output operation failed";
         default:                           return "unknown error";
         }
     }

@@ -10,6 +10,7 @@
 #include "metrisca/core/indicators.hpp"
 
 #include "app/application.hpp"
+#include "app/bin_loader.hpp"
 
 #include <iostream>
 #include <filesystem>
@@ -137,6 +138,7 @@ public:
 
         m_DbFilePath = file_name_arg.value();
         if (!std::filesystem::exists(m_DbFilePath) || !std::filesystem::is_regular_file(m_DbFilePath)) {
+            METRISCA_ERROR("The specified file does not exists");
             return Error::FILE_NOT_FOUND;
         }
 
@@ -227,6 +229,8 @@ int main(int argc, char *argv[])
     // be called using the command 'load'
     // app.RegisterLoader("txtloader", txtloader);
     METRISCA_REGISTER_PLUGIN(CsvLoader, "csvloader");
+    typedef metrisca::BinLoader<100000, 535> MyBinLoader;
+    METRISCA_REGISTER_PLUGIN(MyBinLoader, "binloader");
 
     auto result = app.Start(argc, argv);
 
