@@ -59,6 +59,9 @@ namespace metrisca {
         }
         writer << csv::EndRow;
 
+        // A temporary matrix to store the update sample (sample - expected value)
+        std::vector<double> temp_samples(m_Dataset->GetHeader().NumberOfTraces);
+
         // Resulting list of matrix
         std::vector<Matrix<double>> log_probabilities; // for each key-byte for each step and each key
 
@@ -117,25 +120,31 @@ namespace metrisca {
                     // Find the sample with best correlation under given key hypothesis
                     size_t best_correlation_sample = numerics::ArgMax(scores.GetRow(key));
 
-                    // Corresponding sample
+                    // Retrieve the corresponding sample and recenter it based on our 
+                    // hypothesis
                     auto samples = m_Dataset->GetSample(best_correlation_sample).subspan(m_Distinguisher->GetSampleStart(), step_trace_count);
+                    for (size_t i = 0; i != step_trace_count; ++i) {
+                        temp_samples[i] = samples[i] - (double) power_model(key, m_Distinguisher->GetSampleStart() + i);
+                    }
 
-                    // Find the Pr[k | X_best]
-                    double expected_mean = (double)power_model(0, key);
-                    double standard_deviation = numerics::Std(samples, expected_mean);
+                    double standard_deviation = numerics::Std(temp_samples.data(), step_trace_count, 0.0);
 
                     // Pr[k_i | { X_q }] = Pr[{ X_q } | k_i] * Pr[k_i] / Sum{ Pr[{X_q} | k_i] * Pr[k_i] }
                     double log_proba_under_key_hypothesis = 1.0; // SUM log(Pr[ {X_q} | k_i ])
                     double cummulated_probability = 0.0; // SUM Pr[ {X_q} | k_i ]
-                    for (double sample : samples) {
-                        // Compute the probability of the current sample being measure at the current bin
-                        double previous_bin_threshold = (sample - 0.5 - expected_mean) / (METRISCA_SQRT_2 * standard_deviation);
-                        double next_bin_threshold = (sample + 0.5 - expected_mean) / (METRISCA_SQRT_2 * standard_deviation);
+                    for (size_t sampleIdx = 0; sampleIdx != samples.size(); ++sampleIdx) {
+                        // Retrieve sample
+                        double sample = temp_samples[sampleIdx];
+                        double real_sample = samples[m_Distinguisher->GetSampleStart() + sampleIdx];
 
-                        if (sample == 0) {
+                        // Compute the probability of the current sample being measure at the current bin
+                        double previous_bin_threshold = (sample - 0.5) / (METRISCA_SQRT_2 * standard_deviation);
+                        double next_bin_threshold = (sample + 0.5) / (METRISCA_SQRT_2 * standard_deviation);
+
+                        if (real_sample <= 1e-3) {
                             previous_bin_threshold = -std::numeric_limits<double>::infinity();
                         }
-                        if (sample == 255) {
+                        if (real_sample >= 255 - 1e-3) {
                             next_bin_threshold = std::numeric_limits<double>::infinity();
                         }
 
