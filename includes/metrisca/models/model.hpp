@@ -25,6 +25,8 @@ namespace metrisca {
 
         virtual Result<Matrix<int32_t>, Error> Model() = 0;
 
+        void SetByteIndex(uint32_t byteIndex);
+
     protected:
         std::shared_ptr<TraceDataset> m_Dataset;
         uint32_t m_ByteIndex{};
