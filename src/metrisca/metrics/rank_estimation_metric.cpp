@@ -138,17 +138,22 @@ namespace metrisca {
                         double real_sample = samples[m_Distinguisher->GetSampleStart() + sampleIdx];
 
                         // Compute the probability of the current sample being measure at the current bin
-                        double previous_bin_threshold = (sample - 0.5) / (METRISCA_SQRT_2 * standard_deviation);
-                        double next_bin_threshold = (sample + 0.5) / (METRISCA_SQRT_2 * standard_deviation);
+                        // Notice that this only depend on the model, as such this is bullshit, the bin size is highly
+                        // dependent on something else !!
+                        double x = std::abs(sample / (METRISCA_SQRT_2 * standard_deviation));
+                        // double previous_bin_threshold = (sample - 0.5) / (METRISCA_SQRT_2 * standard_deviation);
+                        // double next_bin_threshold = (sample + 0.5) / (METRISCA_SQRT_2 * standard_deviation);
 
-                        if (real_sample <= 1e-3) {
-                            previous_bin_threshold = -std::numeric_limits<double>::infinity();
-                        }
-                        if (real_sample >= 255 - 1e-3) {
-                            next_bin_threshold = std::numeric_limits<double>::infinity();
-                        }
+                        // if (real_sample <= 1e-3) {
+                        //     previous_bin_threshold = -std::numeric_limits<double>::infinity();
+                        // }
+                        // if (real_sample >= 255 - 1e-3) {
+                        //     next_bin_threshold = std::numeric_limits<double>::infinity();
+                        // }
 
-                        double partial_p = lazy_normal_cdf(next_bin_threshold) - lazy_normal_cdf(previous_bin_threshold);
+                        // double partial_p = lazy_normal_cdf(next_bin_threshold) - lazy_normal_cdf(previous_bin_threshold);
+
+                        double partial_p = 1.0 - lazy_normal_cdf(x) + lazy_normal_cdf(-x); // This is a p-value
 
                         log_proba_under_key_hypothesis += std::log(partial_p);
                         cummulated_probability += partial_p;
