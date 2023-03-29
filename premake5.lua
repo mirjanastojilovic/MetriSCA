@@ -39,6 +39,11 @@ workspace "metrisca"
         runtime "Release"
         optimize "On"
 
+    filter "system:linux"
+        linkoptions {
+            "-pthread"
+        }
+
     filter {}
 
     newaction {
@@ -87,7 +92,6 @@ project "metrisca"
         vpaths {
             ["src/*"] = {"includes/**.hpp", "src/**.hpp", "src/**.cpp"}
         }
-
     filter {}
 
 -- This function can be called by any project that wants to include 
