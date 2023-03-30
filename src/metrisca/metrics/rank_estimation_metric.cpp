@@ -17,6 +17,9 @@
 #include "metrisca/models/model.hpp"
 #include "metrisca/core/lazy_function.hpp"
 #include "metrisca/core/indicators.hpp"
+#include "metrisca/core/arg_list.hpp"
+#include "metrisca/core/parallel.hpp"
+
 
 #include <limits>
 #include <math.h>
@@ -40,6 +43,10 @@ namespace metrisca {
         auto key_span = m_Dataset->GetKey(0);
         m_Key.insert(m_Key.end(), key_span.begin(), key_span.end());
 
+        // Retrieve the bin count argument
+        auto bin_count = args.GetUInt32(ARG_NAME_BIN_COUNT);
+        m_BinCount = bin_count.value_or(10000);
+
         // Finally return success of the initialization
         return {};
     }
@@ -53,7 +60,7 @@ namespace metrisca {
 
         // Open the csv file and write csv header
         CSVWriter writer(m_OutputFile);
-        writer << "keyByteIdx" << "step";
+        writer << "Keybyte" << "Step";
         for (size_t i = 0; i < 256; i++) {
             writer << "value_" + std::to_string(i);
         }
@@ -61,12 +68,27 @@ namespace metrisca {
 
         // A temporary matrix to store the update sample (sample - expected value)
         std::vector<double> temp_samples(m_Dataset->GetHeader().NumberOfTraces);
+        const size_t keyByteCount = m_Dataset->GetHeader().KeySize;
 
         // Resulting list of matrix
-        std::vector<Matrix<double>> log_probabilities; // for each key-byte for each step and each key
-
-        for (size_t keyByteIdx = 0; keyByteIdx != m_Dataset->GetHeader().PlaintextSize; ++keyByteIdx) {
-            // Logging
+        // one LogProbabilityEntry per step
+        struct LogProbabilityEntry {
+            Matrix<double> data; // each matrix is (keyByteCount x 256)
+            double min, max; // min and max value in the matrix 
+            
+            inline LogProbabilityEntry(size_t width, size_t height) 
+            : data(width, height),
+              min(std::numeric_limits<double>::infinity()),
+              max(-std::numeric_limits<double>::infinity())
+            { }
+        };
+        std::vector<LogProbabilityEntry> log_probabilities; 
+        
+        // Computing the resulting matrices
+        METRISCA_INFO("Computing log probabilities for each byte in the key ({} bytes)", keyByteCount);
+        for (size_t keyByteIdx = 0; keyByteIdx != keyByteCount; ++keyByteIdx)
+        {
+            // Loggingwriter
             METRISCA_INFO("Computing key byte {}/{}", keyByteIdx + 1, m_Dataset->GetHeader().PlaintextSize);
 
             // Retrieve the power model (and evaluate it)
@@ -86,6 +108,15 @@ namespace metrisca {
 
             auto score = score_or_error.Value();
 
+            // If this is first key byte, initialize the entire log_probabilities resulting array (and allocate it)
+            if (keyByteIdx == 0) {
+                METRISCA_INFO("Initialize the log probabilities resulting array of Matrices");
+                
+                for (size_t i = 0; i < score.size(); i++) {
+                    log_probabilities.emplace_back(256, keyByteCount);
+                }
+            }
+
             // Display progress bar
             indicators::BlockProgressBar lp_progress_bar{
                 indicators::option::BarWidth(80),
@@ -96,9 +127,6 @@ namespace metrisca {
                 indicators::option::MaxProgress{ score.size() * 256 }
             };
 
-            // Resulting log probability matrix
-            auto& log_probability = log_probabilities.emplace_back(256, score.size());
-
             // Find the sample that leaks the most (highest pearson correlation with the model
             METRISCA_INFO("Compute log-likelihood under key hypothesis");
             for (size_t step = 0; step < score.size(); ++step)
@@ -108,6 +136,9 @@ namespace metrisca {
 
                 // Find the score (pearson correlation) for the current step
                 const Matrix<double>& scores = score[step].second;
+
+                // Find the corresponding entry in the log_probabilities
+                auto& lpEntry = log_probabilities[step];
 
                 // Start writing the new row
                 writer << keyByteIdx << step;
@@ -138,30 +169,28 @@ namespace metrisca {
                         double real_sample = samples[m_Distinguisher->GetSampleStart() + sampleIdx];
 
                         // Compute the probability of the current sample being measure at the current bin
-                        // Notice that this only depend on the model, as such this is bullshit, the bin size is highly
-                        // dependent on something else !!
-                        double x = std::abs(sample / (METRISCA_SQRT_2 * standard_deviation));
-                        // double previous_bin_threshold = (sample - 0.5) / (METRISCA_SQRT_2 * standard_deviation);
-                        // double next_bin_threshold = (sample + 0.5) / (METRISCA_SQRT_2 * standard_deviation);
+                        double previous_bin_threshold = (sample - 0.5) / (METRISCA_SQRT_2 * standard_deviation);
+                        double next_bin_threshold = (sample + 0.5) / (METRISCA_SQRT_2 * standard_deviation);
 
-                        // if (real_sample <= 1e-3) {
-                        //     previous_bin_threshold = -std::numeric_limits<double>::infinity();
-                        // }
-                        // if (real_sample >= 255 - 1e-3) {
-                        //     next_bin_threshold = std::numeric_limits<double>::infinity();
-                        // }
+                        if (real_sample <= 1e-3) {
+                            previous_bin_threshold = -std::numeric_limits<double>::infinity();
+                        }
+                        if (real_sample >= 255 - 1e-3) {
+                            next_bin_threshold = std::numeric_limits<double>::infinity();
+                        }
 
-                        // double partial_p = lazy_normal_cdf(next_bin_threshold) - lazy_normal_cdf(previous_bin_threshold);
-
-                        double partial_p = 1.0 - lazy_normal_cdf(x) + lazy_normal_cdf(-x); // This is a p-value
+                        double partial_p = lazy_normal_cdf(next_bin_threshold) - lazy_normal_cdf(previous_bin_threshold);
 
                         log_proba_under_key_hypothesis += std::log(partial_p);
                         cummulated_probability += partial_p;
                     }
 
                     // Finally compute the log probability
-                    log_probability(step, key) = log_proba_under_key_hypothesis - std::log(cummulated_probability);
-                    writer << log_probability(step, key);
+                    double lp = log_proba_under_key_hypothesis - std::log(cummulated_probability);
+                    lpEntry.data(keyByteIdx, key) = lp;
+                    lpEntry.min = std::min(lp, lpEntry.min);
+                    lpEntry.max = std::max(lp, lpEntry.max);
+                    writer << lp;
                 }
 
                 writer << csv::EndRow;
@@ -171,6 +200,45 @@ namespace metrisca {
             lp_progress_bar.mark_as_completed();
         }
 
+        // Compute the overall histogram as well as the bound of the error introducing when quantizing
+        // the value into discrete bins
+        METRISCA_INFO("Computing histogram with {} bins (for {} steps)", m_BinCount, log_probabilities.size());
+        std::vector<std::vector<uint32_t>> histograms; // All histograms per steps
+        writer << "Histograms" << csv::EndRow;
+
+        for (size_t step = 0; step != log_probabilities.size(); ++step)
+        {
+            auto& lpEntry = log_probabilities[step];
+            Matrix<uint32_t> histogram(m_BinCount, keyByteCount);
+
+            // First compute the histograms
+            for (size_t keyByte = 0; keyByte != keyByteCount; ++keyByte) {
+                histogram.FillRow(keyByte, 0);
+
+                for (size_t key = 0; key != 256; ++key) {
+                    double value = lpEntry.data(keyByte, key);
+                    size_t bin = numerics::FindBin(value, lpEntry.min, lpEntry.max, m_BinCount);
+                    histogram(keyByte, bin) += 1;
+                }
+            }
+
+            // Secondly perform keyByteCount convolution the retrieve the last sample
+            METRISCA_INFO("Performing {} convolution to comupte the overall rank", keyByteCount - 1);
+            auto first_row = histogram.GetRow(0);
+            std::vector<uint32_t> conv(first_row.begin(), first_row.end());
+            for (size_t i = 1; i < keyByteCount; ++i) {
+                conv = numerics::Convolve<uint32_t>(nonstd::span<uint32_t>(conv.begin(), conv.end()), histogram.GetRow(i));
+            }
+
+            for (size_t i = 0; i < conv.size(); i++) {
+                writer << conv[i];
+            }
+            writer << csv::EndRow;
+            
+            // Finally add the final histogram to the list
+            histograms.push_back(std::move(conv));
+        }
+        
         // Print information to the screen
         METRISCA_TRACE("LazyErf cache efficiency (miss-rate): {}", lazy_normal_cdf.missRate());
         

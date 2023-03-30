@@ -10,6 +10,7 @@
 #define _NUMERICS_HPP
 
 #include "math.hpp"
+#include "metrisca/core/assert.hpp"
 
 #include <vector>
 #include <cstdint>
@@ -466,6 +467,37 @@ namespace metrisca { namespace numerics {
         return result;
     }
 
+    /// Find bin utility for histogram
+    static size_t FindBin(double value, double min, double max, size_t binCount)
+    {
+        value -= min;
+        value /= (max - min);
+        return static_cast<size_t>(std::floor(value * (binCount - 1)));
+    }
+
+    /// Convoluting two list together
+    template<typename T, typename R>
+    static std::vector<T> Convolve(const nonstd::span<T>& a, const nonstd::span<R>& b)
+    {
+        METRISCA_ASSERT(a.size() == b.size());
+
+        std::vector<T> result;
+        result.reserve(a.size());
+
+        for (size_t i = 0; i != a.size(); ++i)
+        {
+            T temp = (T) 0;
+
+            for (size_t j = i; j != a.size(); j++)
+            {
+                temp += a[i] * b[j - i];
+            }
+            
+            result.push_back(temp);
+        }
+
+        return result;
+    }
 }}
 
 #endif

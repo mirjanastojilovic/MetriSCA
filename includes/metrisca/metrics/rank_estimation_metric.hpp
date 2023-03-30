@@ -21,6 +21,7 @@ namespace metrisca {
 
     private:
         std::vector<uint8_t> m_Key{};
+        uint32_t m_BinCount{};
     };
 
 }
