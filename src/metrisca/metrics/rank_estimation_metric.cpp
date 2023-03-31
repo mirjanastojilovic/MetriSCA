@@ -239,6 +239,48 @@ namespace metrisca {
             histograms.push_back(std::move(conv));
         }
         
+        // Compute and bound key rank of the real key
+        METRISCA_INFO("Computing key rank of the real key and bounding it");
+        writer << "lower_bound" << "upper_bound" << "rank" << csv::EndRow;
+        for (size_t step = 0; step != histograms.size(); ++step)
+        {
+            const auto& histogram = histograms[step];
+            const auto& lpEntry = log_probabilities[step];
+
+            // Determine the bin in which the real key should be in theory
+            double log_probability_correct_key = 0.0;
+            for (size_t keyByte = 0; keyByte != keyByteCount; ++keyByte) {
+                log_probability_correct_key += lpEntry.data(keyByte, m_Key[i]);
+            }
+
+            // Find the corresponding bin
+            size_t correct_key_bin = numerics::FindBin(log_probability_correct_key, lpEntry.min, lpEntry.max, m_BinCount);
+
+            // Compute the overall key rank (and bounds the bin quantization error) using the histogram
+            size_t lower_bound = 0;
+            size_t upper_bound = 0;
+            size_t rank = 0;
+
+            for(size_t i = correct_key_bin + keyByteCount; i < m_BinCount; i++) {
+                lower_bound += histogram[i];
+            }
+
+            for (size_t i = correct_key_bin; i < correct_key_bin + keyByteCount; i++) {
+                rank += histogram[i];
+            }
+
+            for(size_t i = (correct_key_bin < keyByteCount) ? 0 : correct_key_bin - keyByteCount; i < correct_key_bin; i++) {
+                upper_bound += histogram[i];
+            }
+            
+            rank += lower_bound;
+            upper_bound += rank;
+
+            // Output these values to the file
+            writer << lower_bound << upper_bound << rank << csv::EndRow;
+        } 
+
+
         // Print information to the screen
         METRISCA_TRACE("LazyErf cache efficiency (miss-rate): {}", lazy_normal_cdf.missRate());
         
