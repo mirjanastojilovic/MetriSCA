@@ -250,7 +250,7 @@ namespace metrisca {
             // Determine the bin in which the real key should be in theory
             double log_probability_correct_key = 0.0;
             for (size_t keyByte = 0; keyByte != keyByteCount; ++keyByte) {
-                log_probability_correct_key += lpEntry.data(keyByte, m_Key[i]);
+                log_probability_correct_key += lpEntry.data(keyByte, m_Key[keyByte]);
             }
 
             // Find the corresponding bin
