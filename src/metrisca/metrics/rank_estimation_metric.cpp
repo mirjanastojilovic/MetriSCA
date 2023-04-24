@@ -126,44 +126,87 @@ namespace metrisca {
         }
         
         // For each group, and for each step, compute the average within the group/step
-        std::vector<std::array<std::vector<double>, 256>> group_average; // [step][sample][expected result = 256]
+        std::vector<std::array<std::vector<double>, 256>> group_average; // [step][expected result = 256][sample]
         group_average.reserve(steps.size());
 
         METRISCA_TRACE("Computing the average for each group");
         for (size_t stepIdx = 0; stepIdx != steps.size(); ++stepIdx) { 
-            const size_t number_of_traces = steps[stepIdx]; // Shadow the global one
+            const size_t number_of_traces = steps[stepIdx]; // Shadow the global number_of_traces
 
-            for (size_t i = 0; i != grouped_by_expected_result.size(); ++i) { // For each of the possible output
+            for (size_t groupIdx = 0; groupIdx != 256; ++groupIdx) { // For each of the possible output
                 
-                group_average[stepIdx][i].resize(number_of_samples, 0.0);
+                group_average[stepIdx][groupIdx].resize(number_of_samples, 0.0);
                 size_t matching_trace_count = 0;
 
-                for (size_t traceIdx : grouped_by_expected_result[i]) {
+                for (size_t traceIdx : grouped_by_expected_result[groupIdx]) {
                     // Ignore all traces outside of the sweet zone
                     if (traceIdx >= number_of_traces) continue;
                     matching_trace_count += 1;
 
                     // Computing the average for this specific group
                     for (size_t sampleIdx = first_sample; sampleIdx != last_sample; sampleIdx++) {
-                        group_average[stepIdx][i][sampleIdx - first_sample] += m_Dataset->GetSample(sampleIdx)[traceIdx];
+                        group_average[stepIdx][groupIdx][sampleIdx - first_sample] += m_Dataset->GetSample(sampleIdx)[traceIdx];
                     }
                 }
 
                 // If no such traces exists
                 if (matching_trace_count == 0) {
                     for (size_t j = 0; j < number_of_samples; j++) {
-                        group_average[stepIdx][i][j] = DOUBLE_NAN;
+                        group_average[stepIdx][groupIdx][j] = DOUBLE_NAN;
                     }
                 }
                 else {
                     for (size_t j = 0; j < number_of_samples; j++) {
-                        group_average[stepIdx][i][j] /= matching_trace_count;  
+                        group_average[stepIdx][groupIdx][j] /= matching_trace_count;  
                     }
                 }
             }
         }
 
-        // 
+        // For each group/step compute the covariance matrix between each sample
+        std::vector<Matrix<double>> covariance_matrices;
+        std::vector<Matrix<double>> inverse_covariance_matrices;
+        covariance_matrices.resize(steps.size());
+
+        METRISCA_TRACE("Computing the covariance matrices for each step, for each group between samples");
+        for (size_t stepIdx = 0; stepIdx != steps.size(); stepIdx++) {
+            const size_t number_of_traces = steps[stepIdx]; // Shadow the global number_of_traces
+
+            Matrix<double>& M = covariance_matrices[stepIdx];
+            M.Resize(number_of_samples, number_of_samples);
+
+            // Reset the matrix to '0'
+            for (size_t i = 0; i != number_of_samples; ++i) {
+                M.FillRow(i, 0.0);
+            }
+
+            for (size_t groupIdx = 0; groupIdx != 256; ++groupIdx)
+            {
+                for (size_t traceIdx : grouped_by_expected_result[groupIdx]) {
+                    if (traceIdx >= number_of_traces) continue; // Keep in mind we are working with a subset of all traces
+
+                    for (size_t row = 0; row != number_of_samples; ++row) {
+                        for (size_t col = 0; col != number_of_samples; ++col) {
+                            M(row, col) +=
+                                (m_Dataset->GetSample(first_sample + row)[traceIdx] - group_average[stepIdx][groupIdx][row]) *
+                                (m_Dataset->GetSample(first_sample + col)[traceIdx] - group_average[stepIdx][groupIdx][col]);
+                        }
+                    }
+                }
+            }
+
+            // Finally divide by the total number of traces
+            for (size_t row = 0; row != number_of_samples; ++row) {
+                for (size_t col = 0; col != number_of_samples; ++col) {
+                    M(row, col) /= (number_of_traces - 1);
+                }
+            }
+        }
+        
+        // Retrieve the key "probability" for each step
+        std::vector<std::vector<std::array<double, 256>>> keyProbabilities; // [step][byte][byteValue]
+        
+
 
         // Return success of the operatrion
         return {};
