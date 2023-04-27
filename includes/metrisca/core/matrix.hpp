@@ -97,12 +97,13 @@ namespace metrisca {
 
         /// Compute the inverse of the current matrix, the current matrix must be positively defined
         /// notice that this function also take an internal intermediate result L resulting
-        /// of the cholesky decomposition. This is to prevent recomputing it when already computed 
-        Matrix<T> CholeskyInverse(const Matrix<T>& L)
+        /// of the cholesky decomposition. This is to prevent recomputing it when already computed *
+        Matrix<T> CholeskyInverse()
         {
             METRISCA_ASSERT(GetWidth() == GetHeight()); // The matrix should be a square matrix (...)
             size_t const DimCount = GetWidth();
 
+            Matrix<T> L = CholeskyDecompose();
             Matrix<T> Linv = Matrix<T>::SquareIdentity(DimCount);
 
             // Compute Linv line by line
@@ -122,12 +123,6 @@ namespace metrisca {
 
             // Finally compute the result
             return Transpose(Linv) * Linv;
-        }
-
-        /// Compute the inverse of the current matrix, THE CURRENT MATRIX MUST BE POSITIVELY DEFINED
-        Matrix<T> CholeskyInverse()
-        {
-            CholeskyInverse(CholeskyDecompose()):
         }
 
         /// Compute the L matrix of the Cholesky decomposition

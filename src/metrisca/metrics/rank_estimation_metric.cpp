@@ -85,144 +85,146 @@ namespace metrisca {
             numerics::ARange(m_TraceStep, m_TraceCount + 1, m_TraceStep) :
             std::vector<uint32_t>{ m_TraceCount };
 
-        // Computing the expected output for each of the possible key using the model
-        METRISCA_TRACE("Computing the expected output using the model (for each key bytes)");
-        std::vector<Matrix<int32_t>> models; // for each KeyByte a matrix -> trace x 256
-        models.reserve(m_Key.size());
+        // Retrieve key probabilities for each step and each bytes
+        METRISCA_INFO("Retrieving key probabilities");
+        std::vector<std::vector<std::array<double, 256>>> keyProbabilities; // [step][byte][byteValue]
+        keyProbabilities.resize(steps.size());
+        for (auto& elem : keyProbabilities) elem.resize(m_Key.size());
 
-        for (size_t i = 0; i != m_Key.size(); ++i) {
-            // First set the corresponding byte index
-            m_Distinguisher->GetPowerModel()->SetByteIndex(i);
-
-            // Secondly compute the model        
-            auto result = m_Distinguisher->GetPowerModel()->Model();
-            if (result.IsError()) {
-                METRISCA_ERROR("Fail to compute the model for KeyByte {}", i);
-                return result.Error();
+        for (size_t stepIdx = 0; stepIdx != steps.size(); ++stepIdx)
+        {
+            for (size_t keyByteIdx = 0; keyByteIdx != m_Key.size(); ++keyByteIdx)
+            {
+                auto result = ComputeProbabilities(steps[stepIdx], keyByteIdx);
+                if (result.IsError()) {
+                    METRISCA_ERROR("Fail to compute probabilities with {} traces (key-byte {})", steps[stepIdx], keyByteIdx);
+                    return result.Error();
+                }
+                keyProbabilities[stepIdx][keyByteIdx] = result.Value();
             }
-
-            // Otherwise emplace back the result to the models
-            models.emplace_back(std::move(result.Value()));
         }
+
+        // Do some stuff with things that make more stuff togethers
+        METRISCA_INFO("Computing histogram in order to approximate the rank of the whole key within our model");
+
+        // Return success of the operatrion
+        return {};
+    }
+
+    Result<std::array<double, 256>, Error> RankEstimationMetric::ComputeProbabilities(size_t number_of_traces, size_t keyByteIdx)
+    {
+        // Result of all of this shenanigans
+        std::array<double, 256> probabilities;
+
+        // Utility variables
+        const size_t number_of_samples = m_SampleCount;
+        const size_t first_sample = m_SampleStart;
+        const size_t last_sample = first_sample + m_SampleCount;
+
+        // Compute the modelization matrix for the current byte
+        //TODO: Move this to the parent function in order to prevent it from
+        //      being recomputed at every single step.// For each group/step compute the covariance matrix between each sample
+        m_Distinguisher->GetPowerModel()->SetByteIndex(keyByteIdx);
+        auto result = m_Distinguisher->GetPowerModel()->Model();
+        if (result.IsError()) {
+            METRISCA_ERROR("Fail to compute the model for KeyByte {}", keyByteIdx);
+            return result.Error();
+        }
+
+        Matrix<int32_t> models = result.Value();
 
         // Using our prior knowledge of the correct key, group each 
-        // traces by the "expected" output.
+        // traces by their "expected" output using the model.
         // Notice that in the scenario where we do not know the key, we can simply do this for each 
         // possible key hypothesis.
-        METRISCA_TRACE("Group each traces by their \"expected\" output using out knowledge of the key");
+        //TODO: Same here 
         std::array<std::vector<size_t>, 256> grouped_by_expected_result; // Only store indices of the traces (to save memory)
 
-        for (size_t key_byte = 0; key_byte != m_Key.size(); key_byte++) {
-            for (size_t i = 0; i != number_of_traces; ++i) {
-                int32_t expected_output = models[key_byte](i, m_Key[key_byte]);
+        for (size_t i = 0; i != number_of_traces; ++i) {
+            int32_t expected_output = models(i, m_Key[keyByteIdx]);
 
-                if (expected_output < 0 || expected_output >= 256) {
-                    METRISCA_ERROR("Currently only model producing byte (in range 0 .. 255) are supported by this metric. Instead got {}", expected_output);
-                    return Error::UNSUPPORTED_OPERATION;
-                }
-
-                grouped_by_expected_result[expected_output].push_back(i);
+            if (expected_output < 0 || expected_output >= 256) {
+                METRISCA_ERROR("Currently only model producing byte (in range 0 .. 255) are supported by this metric. Instead got {}", expected_output);
+                return Error::UNSUPPORTED_OPERATION;
             }
+
+            grouped_by_expected_result[expected_output].push_back(i);
         }
+
+        // For each group, for each sample, computes the average within the group
+        std::array<std::vector<double>, 256> group_average; // [step][expected result = 256][sample]
         
-        // For each group, and for each step, compute the average within the group/step
-        std::vector<std::array<std::vector<double>, 256>> group_average; // [step][expected result = 256][sample]
-        group_average.reserve(steps.size());
+        for (size_t groupIdx = 0; groupIdx != 256; ++groupIdx) { // For each of the possible output
+            group_average[groupIdx].resize(number_of_samples, 0.0);
+            size_t matching_trace_count = 0;
 
-        METRISCA_TRACE("Computing the average for each group");
-        for (size_t stepIdx = 0; stepIdx != steps.size(); ++stepIdx) { 
-            const size_t number_of_traces = steps[stepIdx]; // Shadow the global number_of_traces
+            for (size_t traceIdx : grouped_by_expected_result[groupIdx]) {
+                // Ignore all traces outside of the sweet zone
+                if (traceIdx >= number_of_traces) continue;
+                matching_trace_count += 1;
 
-            for (size_t groupIdx = 0; groupIdx != 256; ++groupIdx) { // For each of the possible output
-                
-                group_average[stepIdx][groupIdx].resize(number_of_samples, 0.0);
-                size_t matching_trace_count = 0;
-
-                for (size_t traceIdx : grouped_by_expected_result[groupIdx]) {
-                    // Ignore all traces outside of the sweet zone
-                    if (traceIdx >= number_of_traces) continue;
-                    matching_trace_count += 1;
-
-                    // Computing the average for this specific group
-                    for (size_t sampleIdx = first_sample; sampleIdx != last_sample; sampleIdx++) {
-                        group_average[stepIdx][groupIdx][sampleIdx - first_sample] += m_Dataset->GetSample(sampleIdx)[traceIdx];
-                    }
+                // Computing the average for this specific group
+                for (size_t sampleIdx = first_sample; sampleIdx != last_sample; sampleIdx++) {
+                    group_average[groupIdx][sampleIdx - first_sample] += m_Dataset->GetSample(sampleIdx)[traceIdx];
                 }
+            }
 
-                // If no such traces exists
-                if (matching_trace_count == 0) {
-                    for (size_t j = 0; j < number_of_samples; j++) {
-                        group_average[stepIdx][groupIdx][j] = DOUBLE_NAN;
-                    }
+            // If no such traces exists
+            if (matching_trace_count == 0) {
+                for (size_t j = 0; j < number_of_samples; j++) {
+                    group_average[groupIdx][j] = DOUBLE_NAN;
                 }
-                else {
-                    for (size_t j = 0; j < number_of_samples; j++) {
-                        group_average[stepIdx][groupIdx][j] /= matching_trace_count;  
-                    }
+            }
+            else {
+                for (size_t j = 0; j < number_of_samples; j++) {
+                    group_average[groupIdx][j] /= matching_trace_count;  
                 }
             }
         }
 
-        // For each group/step compute the covariance matrix between each sample
-        std::vector<Matrix<double>> covariance_matrices;
-        std::vector<Matrix<double>> inverse_covariance_matrices;
-        std::vector<double> cov_matrix_determinants;
-        covariance_matrices.resize(steps.size());
-        inverse_covariance_matrices.resize(steps.size());
-        cov_matrix_determinants.resize(steps.size());
+        // Then compute the covariance matrix for each group
+        std::array<Matrix<double>, 256> cov_matrix;
+        std::array<Matrix<double>, 256> cov_inverse_matrix;
+        std::array<double, 256> cov_matrix_determinants;
 
-        METRISCA_TRACE("Computing the covariance matrices for each step, for each group between samples");
-        for (size_t stepIdx = 0; stepIdx != steps.size(); stepIdx++) {
-            const size_t number_of_traces = steps[stepIdx]; // Shadow the global number_of_traces
-
-            Matrix<double>& M = covariance_matrices[stepIdx];
+        for (size_t groupIdx = 0; groupIdx != 256; ++groupIdx)
+        {
+            auto& M = cov_matrix[groupIdx];
             M.Resize(number_of_samples, number_of_samples);
 
             // Reset the matrix to '0'
+                    
             for (size_t i = 0; i != number_of_samples; ++i) {
                 M.FillRow(i, 0.0);
             }
 
-            for (size_t groupIdx = 0; groupIdx != 256; ++groupIdx)
-            {
-                for (size_t traceIdx : grouped_by_expected_result[groupIdx]) {
-                    if (traceIdx >= number_of_traces) continue; // Keep in mind we are working with a subset of all traces
+            for (size_t traceIdx : grouped_by_expected_result[groupIdx]) {
+                // Keep in mind we are working with a subset of all traces
+                if (traceIdx >= number_of_traces) continue; 
 
-                    for (size_t row = 0; row != number_of_samples; ++row) {
-                        for (size_t col = 0; col != number_of_samples; ++col) {
-                            M(row, col) +=
-                                (m_Dataset->GetSample(first_sample + row)[traceIdx] - group_average[stepIdx][groupIdx][row]) *
-                                (m_Dataset->GetSample(first_sample + col)[traceIdx] - group_average[stepIdx][groupIdx][col]);
-                        }
+                for (size_t row = 0; row != number_of_samples; ++row) {
+                    for (size_t col = 0; col != number_of_samples; ++col) {
+                        M(row, col) +=
+                            (m_Dataset->GetSample(first_sample + row)[traceIdx] - group_average[groupIdx][row]) *
+                            (m_Dataset->GetSample(first_sample + col)[traceIdx] - group_average[groupIdx][col]);
                     }
                 }
             }
 
-            // Finally divide by the total number of traces
-            for (size_t row = 0; row != number_of_samples; ++row) {
-                for (size_t col = 0; col != number_of_samples; ++col) {
-                    M(row, col) /= (number_of_traces - 1);
-                }
-            }
+            // Secondly compute the cholesky decomposition for the current covariance matrix
+            Matrix<double> L = M.CholeskyDecompose();
+            cov_inverse_matrix[groupIdx] = L.CholeskyInverse();
 
-            // Compute the inverse of the matrix
-            Matrix<T> L = M.CholeskyDecompose();
-            inverse_covariance_matrices[stepIdx] = M.CholeskyInverse(L);
-            
-            double logDet = 0.0;
-            for (size_t i = 0; i != L.GetWidth(); ++i) {
-                logDet += L(i, i);
+            // And finally compute the log-determinant of the current covariance matrix
+            double& cov_matrix_determinant = cov_matrix_determinants[groupIdx];
+            for (size_t i = 0; i != number_of_samples; ++i) {
+                cov_matrix_determinant += L(i, i);
             }
-            cov_matrix_determinants[stepIdx] = 2.0 * logDet;
+            cov_matrix_determinant *= 2.0;
         }
-        
-        // Retrieve the key "probability" for each step
-        std::vector<std::vector<std::array<double, 256>>> keyProbabilities; // [step][byte][byteValue]
 
-        
-
-        // Return success of the operatrion
-        return {};
+        // Finally upon the success of the current function, return the underlying probabilities
+        return probabilities;
     }
 
 }
