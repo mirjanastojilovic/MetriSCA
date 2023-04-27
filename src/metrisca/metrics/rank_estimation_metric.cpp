@@ -109,7 +109,7 @@ namespace metrisca {
         // traces by the "expected" output.
         // Notice that in the scenario where we do not know the key, we can simply do this for each 
         // possible key hypothesis.
-        METRISCA_TRACE("Group each traces by their \"expected\" output using the prior knowledge of the key");
+        METRISCA_TRACE("Group each traces by their \"expected\" output using out knowledge of the key");
         std::array<std::vector<size_t>, 256> grouped_by_expected_result; // Only store indices of the traces (to save memory)
 
         for (size_t key_byte = 0; key_byte != m_Key.size(); key_byte++) {
@@ -201,6 +201,9 @@ namespace metrisca {
                     M(row, col) /= (number_of_traces - 1);
                 }
             }
+
+            // Compute the inverse of the matrix
+            
         }
         
         // Retrieve the key "probability" for each step

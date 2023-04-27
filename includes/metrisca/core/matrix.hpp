@@ -16,6 +16,7 @@
 #include <vector>
 #include <cstdint>
 #include <fstream>
+#include <cmath>
 
 #include <nonstd/span.hpp>
 
@@ -80,6 +81,102 @@ namespace metrisca {
             METRISCA_ASSERT(row.size() == this->m_Width);
 
             SetRow(row_index, (const ptr_type)row.data());
+        }
+
+        /// Returns the identity matrix for a certain dimension count
+        static Matrix<T> SquareIdentity(size_t DimCount)
+        {
+            Matrix<T> I(DimCount, DimCount);
+            for (size_t i = 0; i != DimCount; ++i) {
+                for (size_t j = 0; j != DimCount; ++j) {
+                    I(i, j) = (i == j) ? (T) 1 : (T) 0;
+                }
+            }
+            return I;
+        }
+
+        /// Compute the inverse of the current matrix, THE CURRENT MATRIX MUST BE POSITIVELY DEFINED
+        Matrix<T> CholeskyInverse()
+        {
+            METRISCA_ASSERT(GetWidth() == GetHeight()); // The matrix should be a square matrix (...)
+            size_t const DimCount = GetWidth();
+
+            Matrix<T> L = CholeskyDecompose();
+            Matrix<T> Linv = Matrix<T>::SquareIdentity(DimCount);
+
+            // Compute Linv line by line
+            for (size_t i = 0; i != DimCount; ++i) {
+                for (size_t j = 0; j != DimCount; ++j) {
+                    Linv(i, j) /= L(i, i);
+                }
+                L(i, i) = (T) 1;
+
+                for (size_t l = i + 1; l < DimCount; ++l) {
+                    double factor = L(l, i);
+                    for (size_t k = 0; k != DimCount; ++k) {
+                        Linv(l, k) -= Linv(i, k) * factor;
+                    }
+                } 
+            }
+
+            // Finally compute the result
+            return Transpose(Linv) * Linv;
+        }
+
+        /// Compute the L matrix of the Cholesky decomposition
+        Matrix<T> CholeskyDecompose()
+        {
+            METRISCA_ASSERT(GetWidth() == GetHeight()); // The matrix should be a square matrix (...)
+            size_t const DimCount = GetWidth();
+
+            Matrix<T> L(DimCount, DimCount);
+            for (size_t i = 0; i != DimCount; ++i) {
+                for (size_t j = 0; j != DimCount; ++j) {
+                    T sum = (T) 0;
+                    for (size_t k = 0; k != j; k++) {
+                        sum += L(i, k) * L(j, k);
+                    }
+
+                    if (i == j) {
+                        L(i, j) = std::sqrt(operator()(i, i) - sum);
+                    }
+                    else {
+                        L(i, j) = (1.0 / L(j, j) * (operator()(i, j) - sum));
+                    } 
+                }
+            } 
+
+            return L;
+        }
+
+        /// Transpose the current matrix
+        friend Matrix<T> Transpose(const Matrix<T>& other)
+        {
+            Matrix<T> result(other.GetHeight(), other.GetWidth());
+            for (size_t i = 0; i != result.GetHeight(); i++) {
+                for (size_t j = 0; j != result.GetWidth(); j++) {
+                    result(i, j) = other(j, i);
+                }
+            }
+            return result;
+        }
+
+        /// Multiplication by a matrix in O(n³)
+        friend Matrix<T> operator*(const Matrix<T>& lhs, const Matrix<T>& rhs)
+        {
+            METRISCA_ASSERT(lhs.GetWidth() == rhs.GetHeight());
+
+            Matrix<T> result(rhs.GetWidth(), lhs.GetHeight());
+            for (size_t i = 0; i != result.GetHeight(); i++) {
+                for (size_t j = 0; j != result.GetWidth(); j++) {
+                    result(i, j) = (T) 0;
+                    for (size_t k = 0; k != lhs.GetWidth(); k++) {
+                        result(i, j) += lhs(i, k) * rhs(k, j);
+                    }
+                }
+            }
+
+            return result;
         }
 
         /// Fill a row of this matrix with a constant value
