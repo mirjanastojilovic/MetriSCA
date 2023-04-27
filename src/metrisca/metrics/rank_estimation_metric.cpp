@@ -85,6 +85,16 @@ namespace metrisca {
             numerics::ARange(m_TraceStep, m_TraceCount + 1, m_TraceStep) :
             std::vector<uint32_t>{ m_TraceCount };
 
+        // Write CSV header
+        CSVWriter writer(m_OutputFile);
+        writer << "number_of_traces";
+        for (size_t j = 0; j < m_Key.size(); j++) {
+            for(uint32_t i = 0; i < 256; ++i) {
+                writer << "key_byte_" + std::to_string(j) + "#" + std::to_string(i);
+            }
+        }
+        writer << csv::EndRow;
+
         // Retrieve key probabilities for each step and each bytes
         METRISCA_INFO("Retrieving key probabilities");
         std::vector<std::vector<std::array<double, 256>>> keyProbabilities; // [step][byte][byteValue]
@@ -104,6 +114,20 @@ namespace metrisca {
             }
         }
 
+        // Output all probabilities to the output file
+        for (size_t stepIdx = 0; stepIdx != steps.size(); ++stepIdx)
+        {
+            writer << steps[stepIdx];
+            for (size_t keyByteIdx = 0; keyByteIdx != m_Key.size(); ++keyByteIdx)
+            {
+                for (size_t keyValue = 0; keyValue = 256; keyValue++)
+                {
+                    writer << keyProbabilities[stepIdx][keyByteIdx][keyValue];
+                }
+            }
+            writer << csv::EndRow;
+        }
+
         // Do some stuff with things that make more stuff togethers
         METRISCA_INFO("Computing histogram in order to approximate the rank of the whole key within our model");
 
@@ -115,6 +139,7 @@ namespace metrisca {
     {
         // Result of all of this shenanigans
         std::array<double, 256> probabilities;
+        METRISCA_TRACE("Computing probabilities for keyByte {} (with {} traces)", keyByteIdx, number_of_traces);
 
         // Utility variables
         const size_t number_of_samples = m_SampleCount;
@@ -141,7 +166,7 @@ namespace metrisca {
         std::array<std::vector<size_t>, 256> grouped_by_expected_result; // Only store indices of the traces (to save memory)
 
         for (size_t i = 0; i != number_of_traces; ++i) {
-            int32_t expected_output = models(i, m_Key[keyByteIdx]);
+            int32_t expected_output = models(m_Key[keyByteIdx], i);
 
             if (expected_output < 0 || expected_output >= 256) {
                 METRISCA_ERROR("Currently only model producing byte (in range 0 .. 255) are supported by this metric. Instead got {}", expected_output);
@@ -181,7 +206,7 @@ namespace metrisca {
                 }
             }
         }
-
+        
         // Then compute the covariance matrix for each group
         std::array<Matrix<double>, 256> cov_matrix;
         std::array<Matrix<double>, 256> cov_inverse_matrix;
