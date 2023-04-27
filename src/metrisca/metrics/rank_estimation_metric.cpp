@@ -166,7 +166,10 @@ namespace metrisca {
         // For each group/step compute the covariance matrix between each sample
         std::vector<Matrix<double>> covariance_matrices;
         std::vector<Matrix<double>> inverse_covariance_matrices;
+        std::vector<double> cov_matrix_determinants;
         covariance_matrices.resize(steps.size());
+        inverse_covariance_matrices.resize(steps.size());
+        cov_matrix_determinants.resize(steps.size());
 
         METRISCA_TRACE("Computing the covariance matrices for each step, for each group between samples");
         for (size_t stepIdx = 0; stepIdx != steps.size(); stepIdx++) {
@@ -203,13 +206,20 @@ namespace metrisca {
             }
 
             // Compute the inverse of the matrix
+            Matrix<T> L = M.CholeskyDecompose();
+            inverse_covariance_matrices[stepIdx] = M.CholeskyInverse(L);
             
+            double logDet = 0.0;
+            for (size_t i = 0; i != L.GetWidth(); ++i) {
+                logDet += L(i, i);
+            }
+            cov_matrix_determinants[stepIdx] = 2.0 * logDet;
         }
         
         // Retrieve the key "probability" for each step
         std::vector<std::vector<std::array<double, 256>>> keyProbabilities; // [step][byte][byteValue]
-        
 
+        
 
         // Return success of the operatrion
         return {};
