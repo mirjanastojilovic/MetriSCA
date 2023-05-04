@@ -9,6 +9,9 @@
 #pragma once
 
 #include "basic_metric.hpp"
+#include "metrisca/core/indicators.hpp"
+
+#include <memory>
 
 namespace metrisca {
 
@@ -20,7 +23,10 @@ namespace metrisca {
         virtual Result<void, Error> Compute() override;
 
     private:
-        Result<std::array<double, 256>, Error> ComputeProbabilities(size_t number_of_traces, size_t keyByteIdx);
+        Result<std::array<double, 256>, Error> ComputeProbabilities(size_t number_of_traces,
+            size_t keyByteIdx,
+            indicators::DynamicProgress<indicators::ProgressBar>& progressBar,
+            std::vector<std::shared_ptr<indicators::ProgressBar>>& bars);
 
         std::vector<uint8_t> m_Key{};
         uint32_t m_BinCount{};

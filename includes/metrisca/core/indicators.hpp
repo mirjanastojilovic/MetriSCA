@@ -13,6 +13,7 @@
 #include <indicators/block_progress_bar.hpp>
 #include <indicators/cursor_control.hpp>
 #include <indicators/multi_progress.hpp>
+#include <indicators/dynamic_progress.hpp>
 #pragma warning(pop)
 
 namespace metrisca {
