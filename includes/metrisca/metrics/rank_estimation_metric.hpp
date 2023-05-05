@@ -12,6 +12,7 @@
 #include "metrisca/core/indicators.hpp"
 
 #include <memory>
+#include <mutex>
 
 namespace metrisca {
 
@@ -27,6 +28,8 @@ namespace metrisca {
             size_t keyByteIdx,
             indicators::DynamicProgress<indicators::ProgressBar>& progressBar,
             std::vector<std::shared_ptr<indicators::ProgressBar>>& bars);
+
+        std::mutex m_GlobalLock; // global lock
 
         std::vector<uint8_t> m_Key{};
         uint32_t m_BinCount{};
