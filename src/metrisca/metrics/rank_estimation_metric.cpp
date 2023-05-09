@@ -28,6 +28,7 @@
 #include <math.h>
 
 #define DOUBLE_NAN (std::numeric_limits<double>::signaling_NaN())
+#define DOUBLE_INFINITY (std::numeric_limits<double>::infinity())
 
 namespace metrisca {
 
@@ -92,12 +93,6 @@ namespace metrisca {
 
         // Write CSV header
         CSVWriter writer(m_OutputFile);
-        writer << "number_of_traces";
-        for (size_t j = 0; j < m_Key.size(); j++) {
-            for(uint32_t i = 0; i < 256; ++i) {
-                writer << "key_byte_" + std::to_string(j) + "@" + std::to_string(i);
-            }
-        }
         writer << csv::EndRow;
 
         // Retrieve key probabilities for each step and each bytes
@@ -144,24 +139,115 @@ namespace metrisca {
         progressBar.set_option(indicators::option::PostfixText{ "  Completed  " });
         progressBar.mark_as_completed();
 
-
-
-        // Output all probabilities to the output file
-        for (size_t stepIdx = 0; stepIdx != steps.size(); ++stepIdx)
-        {
+        // Write the probability matrix
+        writer << "number-of-traces" << "keys..." << csv::EndRow;
+        for (size_t stepIdx = 0; stepIdx != steps.size(); ++stepIdx) {
             writer << steps[stepIdx];
-            for (size_t keyByteIdx = 0; keyByteIdx != m_Key.size(); ++keyByteIdx)
-            {
-                for (size_t keyValue = 0; keyValue != 256; keyValue++)
-                {
-                    writer << keyProbabilities[stepIdx][keyByteIdx][keyValue];
+            for (size_t keyByteIdx = 0; keyByteIdx != m_Key.size(); ++keyByteIdx) {
+                for (size_t key = 0; key != 256; key++) {
+                    writer << keyProbabilities[stepIdx][keyByteIdx][key];
                 }
             }
             writer << csv::EndRow;
         }
 
         // Do some stuff with things that make more stuff togethers
-        METRISCA_INFO("Computing histogram in order to approximate the rank of the whole key within our model");
+        METRISCA_INFO("Computing histogram in order to approximate the rank of the whole key within our model with {} bins", m_BinCount);
+        std::vector<std::vector<uint32_t>> histograms; // A list of all of the output histograms
+        std::vector<std::pair<double, double>> minMaxValues; // A list of min/max for each matrix
+
+        for (size_t stepIdx = 0; stepIdx != steps.size(); ++stepIdx)
+        {
+            auto& log_probabilities = keyProbabilities[stepIdx];
+
+            // Find the minimum & maximum of all log_probabilities (notice -inf is ignored)
+            double min = DOUBLE_INFINITY, max = -DOUBLE_INFINITY;
+            for (size_t keyByte = 0; keyByte != m_Key.size(); ++keyByte) {
+                for (size_t key = 0; key != 256; key++) {
+                    if (log_probabilities[keyByte][key] != -DOUBLE_INFINITY) {
+                        max = std::max(max, log_probabilities[keyByte][key]);
+                        min = std::min(min, log_probabilities[keyByte][key]);
+                    }
+                }
+            }
+
+            minMaxValues.push_back(std::make_pair(min, max));
+
+            // First compute the histogram
+            Matrix<uint32_t> histogram(m_BinCount, m_Key.size());
+            for (size_t keyByte = 0; keyByte != m_Key.size(); ++keyByte) {
+                histogram.FillRow(keyByte, 0);
+
+                for (size_t key = 0; key != 256; key++) {
+                    double value = log_probabilities[keyByte][key];
+
+                    // Skip no-probability entry sample
+                    if (value == -DOUBLE_INFINITY) continue;
+
+                    size_t bin = numerics::FindBin(value, min, max, m_BinCount);
+                    histogram(keyByte, bin) += 1;
+                }
+            }
+
+            // Compute the convolution between each sample
+            auto first_row = histogram.GetRow(0);
+            std::vector<uint32_t> conv(first_row.begin(), first_row.end()); // So not optimized it make me sick (aka hard copy)
+            for (size_t i = 1; i < m_Key.size(); ++i) {
+                conv = numerics::Convolve<uint32_t>(nonstd::span<uint32_t>(conv.begin(), conv.end()), histogram.GetRow(i));
+            }
+
+            // Finally add the last histogram to the output list
+            histograms.push_back(std::move(conv));
+        }
+
+        // Computing key rank for each histograms
+        writer << "number-of-traces" << "lower_bound" << "upper_bound" << "rank" << csv::EndRow;
+
+        METRISCA_INFO("Computing and bounding key-rank of the real key");
+        for (size_t stepIdx = 0; stepIdx != steps.size(); ++stepIdx) {
+            const auto& histogram = histograms[stepIdx];
+            const auto& entry = keyProbabilities[stepIdx];
+            auto [min, max] = minMaxValues[stepIdx];
+
+            // Determine the bin in which the real key should be in theory
+            double log_probability_correct_key = 0.0;
+            for (size_t keyByte = 0; keyByte != m_Key.size(); ++keyByte) {
+                log_probability_correct_key += entry[keyByte][m_Key[keyByte]];
+            }
+
+            // If equal to -infinity ( :'( )
+            if (log_probability_correct_key == -DOUBLE_INFINITY) {
+                METRISCA_ERROR("The log_probability of the correct key is equal to -inf");
+                writer << steps[stepIdx] << "nan" << "nan" << "nan" << csv::EndRow;
+                continue;
+            }
+
+            // Find the corresponding bin
+            size_t correct_key_bin = numerics::FindBin(log_probability_correct_key, min, max, m_BinCount);
+
+            // Compute the overall key rank (and bounds the bin quantization error) using the histogram
+            size_t lower_bound = 0;
+            size_t upper_bound = 0;
+            size_t rank = 0;
+
+            for(size_t i = correct_key_bin + m_Key.size(); i < m_BinCount; i++) {
+                lower_bound += histogram[i];
+            }
+
+            for (size_t i = correct_key_bin; i < correct_key_bin + m_Key.size(); i++) {
+                rank += histogram[i];
+            }
+
+            for(size_t i = (correct_key_bin < m_Key.size()) ? 0 : correct_key_bin - m_Key.size(); i < correct_key_bin; i++) {
+                upper_bound += histogram[i];
+            }
+            
+            rank += lower_bound;
+            upper_bound += rank;
+
+            // Output these values to the file
+            writer << steps[stepIdx] << lower_bound << upper_bound << rank << csv::EndRow;
+        }
 
         // Return success of the operatrion
         return {};
@@ -171,7 +257,7 @@ namespace metrisca {
     {
         // Result of all of this shenanigans
         std::array<double, 256> probabilities;
-        probabilities.fill(0.0);
+        probabilities.fill(-DOUBLE_INFINITY);
 
         // Utility variables
         const size_t number_of_samples = m_SampleCount;
@@ -196,7 +282,7 @@ namespace metrisca {
 
         // Using our prior knowledge of the correct key, group each 
         // traces by their "expected" output using the model.
-        // Notice that in the scenario where we do not know the key, we can simply do this for each 
+        // Notice that in the scenario where wprobabilitiese do not know the key, we can simply do this for each 
         // possible key hypothesis.
         //TODO: Same here 
         std::array<std::vector<size_t>, 256> grouped_by_expected_result; // Only store indices of the traces (to save memory)
@@ -298,7 +384,7 @@ namespace metrisca {
 
         for (size_t row = 0; row != reduced_sample_number; row++) {
             for (size_t col = 0; col != reduced_sample_number; col++) {
-                cov_matrix(row, col) /= (number_of_traces - 1);
+                cov_matrix(row, col) /= (number_of_traces * number_of_samples - 1);
             }
         }
 
@@ -312,6 +398,7 @@ namespace metrisca {
         for (size_t groupIdx = 0; groupIdx != 256; groupIdx++)
         {
             if (group_without_model.find(groupIdx) != group_without_model.end()) continue;
+            probabilities[groupIdx] = 0.0;
 
             for (size_t traceIdx = 0; traceIdx != number_of_traces; ++traceIdx)
             {
@@ -327,7 +414,7 @@ namespace metrisca {
                 for (size_t i = 0; i < reduced_sample_number; i++) {
                     double sum = 0.0;
                     for (size_t j = 0; j < reduced_sample_number; j++) {
-                        sum += noise_vector[j] * cov_inverse_matrix/* [expected_output] */(j, i); // inverse of covariace matrix (symmetric) is also symmetric so the order doesn't matter
+                        sum += noise_vector[j] * cov_inverse_matrix(j, i); // inverse of covariace matrix (symmetric) is also symmetric so the order doesn't matter
                     }
                     intermediary_result[i] = sum;
                 }
