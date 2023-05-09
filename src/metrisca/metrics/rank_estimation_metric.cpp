@@ -95,7 +95,7 @@ namespace metrisca {
         writer << "number_of_traces";
         for (size_t j = 0; j < m_Key.size(); j++) {
             for(uint32_t i = 0; i < 256; ++i) {
-                writer << "key_byte_" + std::to_string(j) + "#" + std::to_string(i);
+                writer << "key_byte_" + std::to_string(j) + "@" + std::to_string(i);
             }
         }
         writer << csv::EndRow;
@@ -108,17 +108,23 @@ namespace metrisca {
 
         std::atomic_bool isError = false;
         Error error;
-        indicators::DynamicProgress<indicators::ProgressBar> progressBar;
-        progressBar.set_option(indicators::option::HideBarWhenComplete{false});
-        std::vector<std::shared_ptr<indicators::ProgressBar>> barList;
-        
+        indicators::ProgressBar progressBar{
+            indicators::option::BarWidth{50},
+            indicators::option::MaxProgress{ steps.size() * m_Key.size() },
+            indicators::option::PrefixText{ "Computing probabilities " },
+            indicators::option::ShowElapsedTime{ true },
+            indicators::option::ShowRemainingTime{ true },
+            indicators::option::ShowPercentage{ true }
+        };
+        progressBar.set_progress(0);
+
         metrisca::parallel_for(0, steps.size() * m_Key.size(), [&](size_t first, size_t last, bool is_main_thread) {
             for (size_t idx = first; idx != last; idx++) {
-                if (isError) return;
+                if (isError) return; 
                 size_t keyByteIdx = idx % m_Key.size();
                 size_t stepIdx = idx / m_Key.size();
 
-                auto result = ComputeProbabilities(steps[stepIdx], keyByteIdx, progressBar, barList);
+                auto result = ComputeProbabilities(steps[stepIdx], keyByteIdx);
                 if (result.IsError()) {
                     METRISCA_ERROR("Fail to compute probabilities with {} traces (key-byte {})", steps[stepIdx], keyByteIdx);
                     isError = true;
@@ -126,8 +132,19 @@ namespace metrisca {
                     return;
                 }
                 keyProbabilities[stepIdx][keyByteIdx] = result.Value();
+
+                {
+                    std::lock_guard guard(m_GlobalLock);
+                    progressBar.tick();
+                    progressBar.set_option(indicators::option::PostfixText{ std::to_string(progressBar.current()) + "/" + std::to_string(steps.size() * m_Key.size()) + " " });
+                }
             }
         });
+        progressBar.set_progress(steps.size() * m_Key.size());
+        progressBar.set_option(indicators::option::PostfixText{ "  Completed  " });
+        progressBar.mark_as_completed();
+
+
 
         // Output all probabilities to the output file
         for (size_t stepIdx = 0; stepIdx != steps.size(); ++stepIdx)
@@ -150,27 +167,8 @@ namespace metrisca {
         return {};
     }
 
-    Result<std::array<double, 256>, Error> RankEstimationMetric::ComputeProbabilities(size_t number_of_traces,
-        size_t keyByteIdx,
-        indicators::DynamicProgress<indicators::ProgressBar>& progressBar,
-        std::vector<std::shared_ptr<indicators::ProgressBar>>& list)
+    Result<std::array<double, 256>, Error> RankEstimationMetric::ComputeProbabilities(size_t number_of_traces, size_t keyByteIdx)
     {
-        // Progress bar for one parameter
-        auto pBar = std::make_shared<indicators::ProgressBar>(
-            indicators::option::BarWidth{50},
-            indicators::option::ShowElapsedTime{true},
-            indicators::option::ShowRemainingTime{true},
-            indicators::option::PrefixText{"Probabilities for " + std::to_string(number_of_traces) + " traces, byte " + std::to_string(keyByteIdx) + " "},
-            indicators::option::MaxProgress(number_of_traces)
-        );
-        auto& bar = *pBar;
-        size_t progressBarIdx;
-        {
-            std::lock_guard<std::mutex> guard(m_GlobalLock);
-            list.push_back(std::move(pBar));
-            progressBarIdx = progressBar.push_back(bar);
-        }
-        
         // Result of all of this shenanigans
         std::array<double, 256> probabilities;
         probabilities.fill(0.0);
@@ -203,14 +201,9 @@ namespace metrisca {
         //TODO: Same here 
         std::array<std::vector<size_t>, 256> grouped_by_expected_result; // Only store indices of the traces (to save memory)
         std::unordered_set<size_t> group_without_model;
-        bar.set_option(indicators::option::PostfixText{ "Enumerating groups" });
-        bar.set_progress(0);
 
         for (size_t i = 0; i != number_of_traces; ++i) {
             int32_t expected_output = models(m_Key[keyByteIdx], i);
-            if (i % (1 + number_of_traces / 100) == 0) {
-                progressBar[progressBarIdx].set_progress(i);
-            }
 
             if (expected_output < 0 || expected_output >= 256) {
                 METRISCA_ERROR("Currently only model producing byte (in range 0 .. 255) are supported by this metric. Instead got {}", expected_output);
@@ -228,18 +221,12 @@ namespace metrisca {
 
         // For each group, for each sample, computes the average within the group
         std::array<std::vector<double>, 256> group_average; // [expected result = 256][sample]
-        bar.set_option(indicators::option::PostfixText{ "Computing group average" });
-        bar.set_progress(0);
 
         for (size_t groupIdx = 0, iter = 0; groupIdx != 256; ++groupIdx) { // For each of the possible output
             group_average[groupIdx].resize(number_of_samples, 0.0);
             size_t matching_trace_count = 0;
 
             for (size_t traceIdx : grouped_by_expected_result[groupIdx]) {
-                if ((iter++ % (1 + number_of_traces / 100)) == 0) {
-                    progressBar[progressBarIdx].set_progress(iter);
-                }
-
                 // Ignore all traces outside of the sweet zone
                 if (traceIdx >= number_of_traces) continue;
                 matching_trace_count += 1;
@@ -279,10 +266,10 @@ namespace metrisca {
 
                 // Iterate over all available sample
                 for (size_t k = m_SampleStart; k != m_SampleCount; ++k) {
-                    double diff = (group_average[i][k] - group_average[j][k]) * 
-                                  (group_average[i][k] - group_average[j][k]);
+                    double diff = (group_average[i][k - first_sample] - group_average[j][k - first_sample]) * 
+                                  (group_average[i][k - first_sample] - group_average[j][k - first_sample]);
                     // cumulated_diff[k] += diff;
-                    if (diff > /* 50.0 */ 80.0 && std::find(selected_sample.begin(), selected_sample.end(), k) == selected_sample.end()) {
+                    if (diff > /* 50.0 */ 0.0 && std::find(selected_sample.begin(), selected_sample.end(), k) == selected_sample.end()) {
                         selected_sample.push_back(k);
                     }
                 }
@@ -290,55 +277,34 @@ namespace metrisca {
         }
         size_t const reduced_sample_number = selected_sample.size();     
 
-        // Then compute the covariance matrix for each group
-        bar.set_option(indicators::option::PostfixText{ "Computing covariance matrix (" + std::to_string(reduced_sample_number) + " x " + std::to_string(reduced_sample_number) + ")         " });
-        bar.set_progress(0);
-        bar.set_option(indicators::option::MaxProgress{ 256 });
-        std::array<Matrix<double>, 256> cov_matrix;
-        std::array<Matrix<double>, 256> cov_inverse_matrix;
-        std::array<double, 256> cov_matrix_determinants;
+        // Compute the covariance matrix
+        Matrix<double> cov_matrix(reduced_sample_number, reduced_sample_number);
+
+        for (size_t i = 0; i != reduced_sample_number; ++i) {
+            cov_matrix.FillRow(i, 0.0);
+        }
 
         for (size_t groupIdx = 0; groupIdx != 256; ++groupIdx)
         {
-            auto& M = cov_matrix[groupIdx];
-            M.Resize(reduced_sample_number, reduced_sample_number);
-
-            // Reset the matrix to '0'
-                    
-            for (size_t i = 0; i != reduced_sample_number; ++i) {
-                M.FillRow(i, 0.0);
-            }
-
             for (size_t traceIdx : grouped_by_expected_result[groupIdx]) {
-                // Keep in mind we are working with a subset of all traces
-                if (traceIdx >= number_of_traces) continue; 
-
-                for (size_t row = 0; row != reduced_sample_number; ++row) {
-                    for (size_t col = 0; col != reduced_sample_number; ++col) {
-                        M(row, col) +=
-                            (m_Dataset->GetSample(first_sample + selected_sample[row])[traceIdx] - group_average[groupIdx][selected_sample[row]]) *
-                            (m_Dataset->GetSample(first_sample + selected_sample[col])[traceIdx] - group_average[groupIdx][selected_sample[col]]);
+                for (size_t row = 0; row != reduced_sample_number; row++) {
+                    for (size_t col = 0; col != reduced_sample_number; col++) {
+                        cov_matrix(row, col) += (m_Dataset->GetSample(selected_sample[row])[traceIdx] - group_average[groupIdx][selected_sample[row] - first_sample]) *
+                                                (m_Dataset->GetSample(selected_sample[col])[traceIdx] - group_average[groupIdx][selected_sample[col] - first_sample]);
                     }
                 }
             }
-
-            // Secondly compute the cholesky decomposition for the current covariance matrix
-            progressBar[progressBarIdx].tick();
-            Matrix<double> L = M.CholeskyDecompose();
-            cov_inverse_matrix[groupIdx] = L.CholeskyInverse();
-
-            // And finally compute the log-determinant of the current covariance matrix
-            double& cov_matrix_determinant = cov_matrix_determinants[groupIdx];
-            for (size_t i = 0; i != reduced_sample_number; ++i) {
-                cov_matrix_determinant += L(i, i);
-            }
-            cov_matrix_determinant *= 2.0;
         }
 
+        for (size_t row = 0; row != reduced_sample_number; row++) {
+            for (size_t col = 0; col != reduced_sample_number; col++) {
+                cov_matrix(row, col) /= (number_of_traces - 1);
+            }
+        }
+
+        Matrix<double> cov_inverse_matrix = cov_matrix.CholeskyInverse();
+
         // Finally compute the probabilities
-        bar.set_option(indicators::option::PostfixText{ "Computing probabilities               " });
-        bar.set_progress(0);
-        bar.set_option(indicators::option::MaxProgress{ 256 });
         std::vector<double> noise_vector, intermediary_result; // number of samples
         noise_vector.resize(reduced_sample_number);
         intermediary_result.resize(reduced_sample_number);
@@ -346,21 +312,22 @@ namespace metrisca {
         for (size_t groupIdx = 0; groupIdx != 256; groupIdx++)
         {
             if (group_without_model.find(groupIdx) != group_without_model.end()) continue;
-            progressBar[progressBarIdx].tick();
 
             for (size_t traceIdx = 0; traceIdx != number_of_traces; ++traceIdx)
             {
                 int32_t expected_output = models(groupIdx, traceIdx);
+                if (group_without_model.find(expected_output) != group_without_model.end()) continue;
+
                 for (size_t j = 0; j != reduced_sample_number; ++j)
                 {
-                    noise_vector[j] = m_Dataset->GetSample(first_sample + selected_sample[j])[traceIdx] - group_average[expected_output][selected_sample[j]];
+                    noise_vector[j] = m_Dataset->GetSample(selected_sample[j])[traceIdx] - group_average[expected_output][selected_sample[j] - first_sample];
                 }
 
                 // Compute noise transposed * inverse
                 for (size_t i = 0; i < reduced_sample_number; i++) {
                     double sum = 0.0;
                     for (size_t j = 0; j < reduced_sample_number; j++) {
-                        sum += noise_vector[j] * cov_inverse_matrix[expected_output](i, j); // inverse of covariace matrix (symmetric) is also symmetric so the order doesn't matter
+                        sum += noise_vector[j] * cov_inverse_matrix/* [expected_output] */(j, i); // inverse of covariace matrix (symmetric) is also symmetric so the order doesn't matter
                     }
                     intermediary_result[i] = sum;
                 }
@@ -377,8 +344,6 @@ namespace metrisca {
         }
 
         // Finally upon the success of the current function, return the underlying probabilities
-        bar.set_option(indicators::option::PostfixText{ "Done                                               " });
-        bar.mark_as_completed();
         return probabilities;
     }
 

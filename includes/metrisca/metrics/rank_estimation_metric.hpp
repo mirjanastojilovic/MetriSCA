@@ -9,7 +9,6 @@
 #pragma once
 
 #include "basic_metric.hpp"
-#include "metrisca/core/indicators.hpp"
 
 #include <memory>
 #include <mutex>
@@ -24,10 +23,7 @@ namespace metrisca {
         virtual Result<void, Error> Compute() override;
 
     private:
-        Result<std::array<double, 256>, Error> ComputeProbabilities(size_t number_of_traces,
-            size_t keyByteIdx,
-            indicators::DynamicProgress<indicators::ProgressBar>& progressBar,
-            std::vector<std::shared_ptr<indicators::ProgressBar>>& bars);
+        Result<std::array<double, 256>, Error> ComputeProbabilities(size_t number_of_traces, size_t keyByteIdx);
 
         std::mutex m_GlobalLock; // global lock
 
