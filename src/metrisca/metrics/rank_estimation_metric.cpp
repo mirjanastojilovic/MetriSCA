@@ -113,9 +113,10 @@ namespace metrisca {
         };
         progressBar.set_progress(0);
 
-        metrisca::parallel_for(0, steps.size() * m_Key.size(), [&](size_t first, size_t last, bool is_main_thread) {
-            for (size_t idx = first; idx != last; idx++) {
-                if (isError) return; 
+        // metrisca::parallel_for(0, steps.size() * m_Key.size(), [&](size_t first, size_t last, bool is_main_thread) {
+        //     for (size_t idx = first; idx != last; idx++) {
+            for(size_t idx = 0; idx != steps.size() * m_Key.size(); idx++) {
+                if (isError) break; // return; 
                 size_t keyByteIdx = idx % m_Key.size();
                 size_t stepIdx = idx / m_Key.size();
 
@@ -124,7 +125,7 @@ namespace metrisca {
                     METRISCA_ERROR("Fail to compute probabilities with {} traces (key-byte {})", steps[stepIdx], keyByteIdx);
                     isError = true;
                     error = result.Error();
-                    return;
+                    break; // return;
                 }
                 keyProbabilities[stepIdx][keyByteIdx] = result.Value();
 
@@ -134,10 +135,14 @@ namespace metrisca {
                     progressBar.set_option(indicators::option::PostfixText{ std::to_string(progressBar.current()) + "/" + std::to_string(steps.size() * m_Key.size()) + " " });
                 }
             }
-        });
+        // });
         progressBar.set_progress(steps.size() * m_Key.size());
         progressBar.set_option(indicators::option::PostfixText{ "  Completed  " });
         progressBar.mark_as_completed();
+
+        if (isError) {
+            return error;
+        }
 
         // Write the probability matrix
         writer << "number-of-traces" << "keys..." << csv::EndRow;
@@ -282,7 +287,7 @@ namespace metrisca {
 
         // Using our prior knowledge of the correct key, group each 
         // traces by their "expected" output using the model.
-        // Notice that in the scenario where wprobabilitiese do not know the key, we can simply do this for each 
+        // Notice that in the scenario where probabilities do not know the key, we can simply do this for each 
         // possible key hypothesis.
         //TODO: Same here 
         std::array<std::vector<size_t>, 256> grouped_by_expected_result; // Only store indices of the traces (to save memory)
@@ -304,6 +309,8 @@ namespace metrisca {
                 group_without_model.insert(groupIdx);
             }
         }
+
+        METRISCA_INFO("There are {} group without model for byte {} with {} traces", group_without_model.size(), keyByteIdx, number_of_traces);
 
         // For each group, for each sample, computes the average within the group
         std::array<std::vector<double>, 256> group_average; // [expected result = 256][sample]
@@ -351,20 +358,32 @@ namespace metrisca {
                 if (group_without_model.find(j) != group_without_model.end()) continue;
 
                 // Iterate over all available sample
-                for (size_t k = m_SampleStart; k != m_SampleCount; ++k) {
+                for (size_t k = first_sample; k != last_sample; ++k) {
                     double diff = (group_average[i][k - first_sample] - group_average[j][k - first_sample]) * 
                                   (group_average[i][k - first_sample] - group_average[j][k - first_sample]);
                     // cumulated_diff[k] += diff;
-                    if (diff > /* 50.0 */ 0.0 && std::find(selected_sample.begin(), selected_sample.end(), k) == selected_sample.end()) {
+                    if (diff > 50.0 && std::find(selected_sample.begin(), selected_sample.end(), k) == selected_sample.end()) {
                         selected_sample.push_back(k);
                     }
                 }
             }
         }
-        size_t const reduced_sample_number = selected_sample.size();     
+        size_t const reduced_sample_number = selected_sample.size();
+        METRISCA_INFO("The number of POI is: {} for byte {}, with {} traces", reduced_sample_number, keyByteIdx, number_of_traces);
 
         // Compute the covariance matrix
         Matrix<double> cov_matrix(reduced_sample_number, reduced_sample_number);
+        std::vector<double> avg;
+        avg.resize(reduced_sample_number);
+
+        for (size_t i = 0; i != reduced_sample_number; i++) {
+            avg[i] = 0.0;
+            for (size_t j = 0; j != number_of_traces; ++j) {
+                avg[i] += m_Dataset->GetSample(selected_sample[i])[j];
+            }
+            avg[i] /= number_of_traces;
+        }
+        
 
         for (size_t i = 0; i != reduced_sample_number; ++i) {
             cov_matrix.FillRow(i, 0.0);
@@ -377,14 +396,25 @@ namespace metrisca {
                     for (size_t col = 0; col != reduced_sample_number; col++) {
                         cov_matrix(row, col) += (m_Dataset->GetSample(selected_sample[row])[traceIdx] - group_average[groupIdx][selected_sample[row] - first_sample]) *
                                                 (m_Dataset->GetSample(selected_sample[col])[traceIdx] - group_average[groupIdx][selected_sample[col] - first_sample]);
+                        // cov_matrix(row, col) += (m_Dataset->GetSample(selected_sample[row])[traceIdx] - avg[row]) *
+                        //                         (m_Dataset->GetSample(selected_sample[col])[traceIdx] - avg[col]);
                     }
                 }
             }
         }
 
+        // for (size_t row = 0; row != reduced_sample_number; row++) {
+        //     for (size_t col = 0; col != reduced_sample_number; col++) {
+        //         for (size_t traceIdx = 0; traceIdx != number_of_traces; ++traceIdx) {
+        //             cov_matrix(row, col) += (m_Dataset->GetSample(selected_sample[row])[traceIdx] - avg[row]) *
+        //                                     (m_Dataset->GetSample(selected_sample[col])[traceIdx] - avg[col]);
+        //         }
+        //     }
+        // }
+
         for (size_t row = 0; row != reduced_sample_number; row++) {
             for (size_t col = 0; col != reduced_sample_number; col++) {
-                cov_matrix(row, col) /= (number_of_traces * number_of_samples - 1);
+                cov_matrix(row, col) /= (number_of_traces - 1);
             }
         }
 

@@ -37,6 +37,7 @@ namespace metrisca {
 
     public:
         Matrix(): m_Width(0), m_Height(0) {}
+        Matrix(const Matrix& other) : m_Width(other.m_Width), m_Height(other.m_Height), m_Data(other.m_Data) {}
         Matrix(size_type width, size_type height): m_Width(width), m_Height(height) { this->m_Data.resize(width * height); }
     
         /// Get the raw pointer of the underlying data storage
@@ -93,6 +94,40 @@ namespace metrisca {
                 }
             }
             return I;
+        }
+
+        /// Compute the inverse of the current matrix
+        Matrix<T> Inverse()
+        {
+            METRISCA_ASSERT(GetWidth() == GetHeight()); // The matrix should be a square matrix (...)
+            size_t const DimCount = GetWidth();
+
+            Matrix<T> Self(*this);
+            Matrix<T> Identity = Matrix<T>::SquareIdentity(DimCount);
+
+            for (size_t i = 0; i != DimCount; ++i) {
+                double nFactor = Self(i, i);
+                for (size_t j = i; j != DimCount; ++j) {
+                    Self(i, j) /= nFactor;
+                } 
+                for (size_t j = 0; j != DimCount; ++j) {
+                    Identity(i, j) /= nFactor;
+                }
+
+                for (size_t k = 0; k != DimCount; ++k) {
+                    if (k == i) continue;
+
+                    double factor = Self(k, i);
+                    for (size_t j = i; j != DimCount; ++j) {
+                        Self(k, j) -= factor * Self(i, j);
+                    }
+                    for (size_t j = 0; j != DimCount; ++j) {
+                        Identity(k, j) -= factor * Identity(i, j);
+                    }
+                }
+            }
+
+            return Identity;
         }
 
         /// Compute the inverse of the current matrix, the current matrix must be positively defined
