@@ -472,7 +472,10 @@ namespace metrisca { namespace numerics {
     {
         value -= min;
         value /= (max - min);
-        return static_cast<size_t>(std::floor(value * (binCount - 1)));
+        uint64_t result = static_cast<uint64_t>(std::floor(value * (binCount - 1)));
+        if (result < 0) return 0;
+        else if (result >= binCount) return binCount - 1;
+        else return  result;
     }
 
     /// Convoluting two list together

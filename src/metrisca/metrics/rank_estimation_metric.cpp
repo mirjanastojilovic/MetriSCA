@@ -113,10 +113,9 @@ namespace metrisca {
         };
         progressBar.set_progress(0);
 
-        // metrisca::parallel_for(0, steps.size() * m_Key.size(), [&](size_t first, size_t last, bool is_main_thread) {
-        //     for (size_t idx = first; idx != last; idx++) {
+        metrisca::parallel_for(0, steps.size() * m_Key.size(), [&](size_t first, size_t last, bool is_main_thread) {
             for(size_t idx = 0; idx != steps.size() * m_Key.size(); idx++) {
-                if (isError) break; // return; 
+                if (isError) return; 
                 size_t keyByteIdx = idx % m_Key.size();
                 size_t stepIdx = idx / m_Key.size();
 
@@ -125,7 +124,7 @@ namespace metrisca {
                     METRISCA_ERROR("Fail to compute probabilities with {} traces (key-byte {})", steps[stepIdx], keyByteIdx);
                     isError = true;
                     error = result.Error();
-                    break; // return;
+                    return;
                 }
                 keyProbabilities[stepIdx][keyByteIdx] = result.Value();
 
@@ -135,7 +134,7 @@ namespace metrisca {
                     progressBar.set_option(indicators::option::PostfixText{ std::to_string(progressBar.current()) + "/" + std::to_string(steps.size() * m_Key.size()) + " " });
                 }
             }
-        // });
+        });
         progressBar.set_progress(steps.size() * m_Key.size());
         progressBar.set_option(indicators::option::PostfixText{ "  Completed  " });
         progressBar.mark_as_completed();
@@ -344,11 +343,9 @@ namespace metrisca {
         }
 
         // Reducing number of samples to speed-up the computation
-        // std::unordered_map<size_t, double> cumulated_diff;
         std::vector<size_t> selected_sample;
-        // for (size_t k = m_SampleStart; k != m_SampleCount; ++k) {
-        //     cumulated_diff[k] = 0.0;  
-        // }
+        std::vector<double> best_diff_per_sample;
+        best_diff_per_sample.resize(last_sample - first_sample, 0.0);
 
         for (size_t i = 0; i != 256; i++) {
             // Skip group without model
@@ -361,20 +358,42 @@ namespace metrisca {
                 for (size_t k = first_sample; k != last_sample; ++k) {
                     double diff = (group_average[i][k - first_sample] - group_average[j][k - first_sample]) * 
                                   (group_average[i][k - first_sample] - group_average[j][k - first_sample]);
-                    // cumulated_diff[k] += diff;
-                    if (diff > 50.0 && std::find(selected_sample.begin(), selected_sample.end(), k) == selected_sample.end()) {
-                        selected_sample.push_back(k);
+                    if (best_diff_per_sample[k - first_sample] < diff) {
+                        best_diff_per_sample[k - first_sample] = diff;
                     }
                 }
             }
         }
+
+        // Because of numerical stability issues and optimization problems
+        // we do not compute the covariance on all samples, only on the most
+        // useful ones. To achieve this goal we will sort all sample by there best
+        // diff, and select 60 of the best sample
+        {
+            std::vector<size_t> ordered_diffs;
+            ordered_diffs.reserve(best_diff_per_sample.size());
+            for (size_t i = 0; i != best_diff_per_sample.size(); ++i) {
+                ordered_diffs.push_back(i);
+            }
+
+            std::sort(ordered_diffs.begin(), ordered_diffs.end(), [&](size_t x, size_t y) {
+                return best_diff_per_sample[x] < best_diff_per_sample[y];
+            });
+
+            // Keep best 60 best sample
+            for (size_t i = 0; i != ordered_diffs.size(); ++i) {
+                if (i >= 60) break;
+                selected_sample.push_back(ordered_diffs[i]);
+            }
+        }
+
         size_t const reduced_sample_number = selected_sample.size();
         METRISCA_INFO("The number of POI is: {} for byte {}, with {} traces", reduced_sample_number, keyByteIdx, number_of_traces);
 
         // Compute the covariance matrix
         Matrix<double> cov_matrix(reduced_sample_number, reduced_sample_number);
         std::vector<double> avg;
-        avg.resize(reduced_sample_number);
+        avg.resize(reduced_sample_number, 0.0);
 
         for (size_t i = 0; i != reduced_sample_number; i++) {
             avg[i] = 0.0;
@@ -396,8 +415,6 @@ namespace metrisca {
                     for (size_t col = 0; col != reduced_sample_number; col++) {
                         cov_matrix(row, col) += (m_Dataset->GetSample(selected_sample[row])[traceIdx] - group_average[groupIdx][selected_sample[row] - first_sample]) *
                                                 (m_Dataset->GetSample(selected_sample[col])[traceIdx] - group_average[groupIdx][selected_sample[col] - first_sample]);
-                        // cov_matrix(row, col) += (m_Dataset->GetSample(selected_sample[row])[traceIdx] - avg[row]) *
-                        //                         (m_Dataset->GetSample(selected_sample[col])[traceIdx] - avg[col]);
                     }
                 }
             }
