@@ -53,20 +53,28 @@ namespace metrisca {
         auto bin_count = args.GetUInt32(ARG_NAME_BIN_COUNT);
         m_BinCount = bin_count.value_or(10000);
         
+        
+
+
 
         // Sample & trace count/step
         auto sample_start = args.GetUInt32(ARG_NAME_SAMPLE_START);
         auto sample_end = args.GetUInt32(ARG_NAME_SAMPLE_END);
         auto trace_count = args.GetUInt32(ARG_NAME_TRACE_COUNT);
         auto trace_step = args.GetUInt32(ARG_NAME_TRACE_STEP);
+        auto sample_filter = args.GetUInt32(ARG_NUMBER_SAMPLE_FILTER);
         TraceDatasetHeader header = m_Dataset->GetHeader();
         m_TraceCount = trace_count.value_or(header.NumberOfTraces);
         m_TraceStep = trace_step.value_or(0);
         m_SampleStart = sample_start.value_or(0);
         m_SampleCount = sample_end.value_or(header.NumberOfSamples) - m_SampleStart;
+        m_SampleFilterCount = sample_filter.value_or(60);
 
         // Sanity checks
         if(m_SampleCount == 0)
+            return Error::INVALID_ARGUMENT;
+
+        if (m_SampleFilterCount > header.NumberOfSamples)
             return Error::INVALID_ARGUMENT;
 
         if(m_SampleStart + m_SampleCount > header.NumberOfSamples)
@@ -114,7 +122,7 @@ namespace metrisca {
         progressBar.set_progress(0);
 
         metrisca::parallel_for(0, steps.size() * m_Key.size(), [&](size_t first, size_t last, bool is_main_thread) {
-            for(size_t idx = 0; idx != steps.size() * m_Key.size(); idx++) {
+            for(size_t idx = first; idx != last; idx++) {
                 if (isError) return; 
                 size_t keyByteIdx = idx % m_Key.size();
                 size_t stepIdx = idx / m_Key.size();
@@ -135,6 +143,7 @@ namespace metrisca {
                 }
             }
         });
+        
         progressBar.set_progress(steps.size() * m_Key.size());
         progressBar.set_option(indicators::option::PostfixText{ "  Completed  " });
         progressBar.mark_as_completed();
@@ -168,9 +177,11 @@ namespace metrisca {
             double min = DOUBLE_INFINITY, max = -DOUBLE_INFINITY;
             for (size_t keyByte = 0; keyByte != m_Key.size(); ++keyByte) {
                 for (size_t key = 0; key != 256; key++) {
-                    if (log_probabilities[keyByte][key] != -DOUBLE_INFINITY) {
-                        max = std::max(max, log_probabilities[keyByte][key]);
-                        min = std::min(min, log_probabilities[keyByte][key]);
+                    double value = log_probabilities[keyByte][key];
+
+                    if (std::isfinite(value) && !std::isnan(value)) {
+                        max = std::max(max, value);
+                        min = std::min(min, value);
                     }
                 }
             }
@@ -220,7 +231,7 @@ namespace metrisca {
             }
 
             // If equal to -infinity ( :'( )
-            if (log_probability_correct_key == -DOUBLE_INFINITY) {
+            if (log_probability_correct_key == -DOUBLE_INFINITY  || std::isnan(log_probability_correct_key)) {
                 METRISCA_ERROR("The log_probability of the correct key is equal to -inf");
                 writer << steps[stepIdx] << "nan" << "nan" << "nan" << csv::EndRow;
                 continue;
@@ -242,7 +253,7 @@ namespace metrisca {
                 rank += histogram[i];
             }
 
-            for(size_t i = (correct_key_bin < m_Key.size()) ? 0 : correct_key_bin - m_Key.size(); i < correct_key_bin; i++) {
+            for(size_t i = ((correct_key_bin < m_Key.size()) ? 0 : (correct_key_bin - m_Key.size())); i < correct_key_bin; i++) {
                 upper_bound += histogram[i];
             }
             
@@ -286,9 +297,6 @@ namespace metrisca {
 
         // Using our prior knowledge of the correct key, group each 
         // traces by their "expected" output using the model.
-        // Notice that in the scenario where probabilities do not know the key, we can simply do this for each 
-        // possible key hypothesis.
-        //TODO: Same here 
         std::array<std::vector<size_t>, 256> grouped_by_expected_result; // Only store indices of the traces (to save memory)
         std::unordered_set<size_t> group_without_model;
 
@@ -309,7 +317,13 @@ namespace metrisca {
             }
         }
 
-        METRISCA_INFO("There are {} group without model for byte {} with {} traces", group_without_model.size(), keyByteIdx, number_of_traces);
+        // Log a warning if there is group without model
+        if (!group_without_model.empty()) {
+            METRISCA_WARN("There are {} group without model for byte {} with {} traces",
+                          group_without_model.size(),
+                          keyByteIdx,
+                          number_of_traces);
+        }
 
         // For each group, for each sample, computes the average within the group
         std::array<std::vector<double>, 256> group_average; // [expected result = 256][sample]
@@ -368,7 +382,7 @@ namespace metrisca {
         // Because of numerical stability issues and optimization problems
         // we do not compute the covariance on all samples, only on the most
         // useful ones. To achieve this goal we will sort all sample by there best
-        // diff, and select 60 of the best sample
+        // diff, and select m_SampleFilterCount of the best sample
         {
             std::vector<size_t> ordered_diffs;
             ordered_diffs.reserve(best_diff_per_sample.size());
@@ -380,15 +394,15 @@ namespace metrisca {
                 return best_diff_per_sample[x] < best_diff_per_sample[y];
             });
 
-            // Keep best 60 best sample
+            // Keep best m_SampleFilterCount best sample
             for (size_t i = 0; i != ordered_diffs.size(); ++i) {
-                if (i >= 60) break;
+                if (i >= m_SampleFilterCount) break;
                 selected_sample.push_back(ordered_diffs[i]);
             }
         }
 
         size_t const reduced_sample_number = selected_sample.size();
-        METRISCA_INFO("The number of POI is: {} for byte {}, with {} traces", reduced_sample_number, keyByteIdx, number_of_traces);
+        METRISCA_TRACE("The number of POI is: {} for byte {}, with {} traces", reduced_sample_number, keyByteIdx, number_of_traces);
 
         // Compute the covariance matrix
         Matrix<double> cov_matrix(reduced_sample_number, reduced_sample_number);
@@ -419,15 +433,6 @@ namespace metrisca {
                 }
             }
         }
-
-        // for (size_t row = 0; row != reduced_sample_number; row++) {
-        //     for (size_t col = 0; col != reduced_sample_number; col++) {
-        //         for (size_t traceIdx = 0; traceIdx != number_of_traces; ++traceIdx) {
-        //             cov_matrix(row, col) += (m_Dataset->GetSample(selected_sample[row])[traceIdx] - avg[row]) *
-        //                                     (m_Dataset->GetSample(selected_sample[col])[traceIdx] - avg[col]);
-        //         }
-        //     }
-        // }
 
         for (size_t row = 0; row != reduced_sample_number; row++) {
             for (size_t col = 0; col != reduced_sample_number; col++) {
@@ -477,7 +482,7 @@ namespace metrisca {
             }
         }
 
-        // Finally upon the success of the current function, return the underlying probabilities
+        // Upon the success of the current function, return the underlying probabilities
         return probabilities;
     }
 

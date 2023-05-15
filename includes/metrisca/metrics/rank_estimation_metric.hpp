@@ -33,6 +33,7 @@ namespace metrisca {
         uint32_t m_TraceCount{};
         uint32_t m_SampleStart{};
         uint32_t m_SampleCount{};
+        uint32_t m_SampleFilterCount{};
     };
 
 }

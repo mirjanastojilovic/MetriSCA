@@ -478,25 +478,42 @@ namespace metrisca { namespace numerics {
         else return  result;
     }
 
-    /// Convoluting two list together
+    /// Convoluting two list together (result is of length N + M - 1)
     template<typename T, typename R>
-    static std::vector<T> Convolve(const nonstd::span<T>& a, const nonstd::span<R>& b)
+    static auto Convolve(const nonstd::span<T>& A, const nonstd::span<R>& B) -> std::vector<std::decay_t<decltype(A[0] * B[0])>>
     {
-        METRISCA_ASSERT(a.size() == b.size());
+        using RType = typename std::decay_t<decltype(A[0] * B[0])>;
+        std::vector<RType> result;
+        const int N = (int) A.size();
+        const int M = (int) B.size();
 
-        std::vector<T> result;
-        result.reserve(a.size());
+        // Without loss of generality we assume that N >= M
+        if (M > N) {
+            return Convolve(B, A);
+        }
 
-        for (size_t i = 0; i != a.size(); ++i)
+        result.resize(N + M - 1, (RType) 0);
+
+        // Compute each component individually, notice that this algorithm
+        // is not the most efficient one, because FFT exists
+        for (int i = 0; i != result.size(); ++i)
         {
-            T temp = (T) 0;
+            // Compute last index of the sumation corresponding respectively
+            // to the A array and to the B array. (Excluded)
+            int last1 = std::min(N, i + 1);
+            int last2 = std::min(M, N + M - i - 1);
 
-            for (size_t j = i; j != a.size(); j++)
-            {
-                temp += a[i] * b[j - i];
+            // Compute first index of the sumation corresponding respectively
+            // to the A array and to the B array. (Included)
+            int first1 = std::max(std::max(0, i - N), (last1 - last2));
+            int first2 = std::max(0, M - (i + 1));
+
+            int range = last2 - first2;
+
+            // Finally perform the summation operation
+            for (int k = 0; k != range; ++k) {
+                result[i] += A[first1 + k] * B[M - (first2 + k) - 1];
             }
-            
-            result.push_back(temp);
         }
 
         return result;

@@ -108,6 +108,7 @@ namespace metrisca {
                 parser.AddOptionArgument(ARG_NAME_SAMPLE_START, { "-s", "--start" }, ArgumentType::UInt32, "The index of the first sample to analyse.", "0");
                 parser.AddOptionArgument(ARG_NAME_SAMPLE_END, { "-e", "--end" }, ArgumentType::UInt32, "The non-inclusive index of the last sample to analyse. Default: #samples in the dataset.", false);
                 parser.AddOptionArgument(ARG_NAME_BIN_COUNT, { "-b", "--bin-count" }, ArgumentType::UInt32, "Number of bin when building the histogram according to the enumeration algorithm", "10000");
+                parser.AddOptionArgument(ARG_NUMBER_SAMPLE_FILTER, { "-sf", "--sample-filter" }, ArgumentType::UInt32, "Number of sample kept after filtration. Notice that if this number is too big, this might lead to stability issues and bad-conditioned matrix.", "60");
                 command->AddSubParser(parser);
             }
 
