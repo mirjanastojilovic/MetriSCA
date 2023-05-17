@@ -29,6 +29,7 @@
 
 #define DOUBLE_NAN (std::numeric_limits<double>::signaling_NaN())
 #define DOUBLE_INFINITY (std::numeric_limits<double>::infinity())
+#define IS_VALID_DOUBLE(value) (std::isfinite(value) && !std::isnan(value))
 
 namespace metrisca {
 
@@ -175,7 +176,7 @@ namespace metrisca {
         minMaxValues.resize(steps.size(), std::make_pair(0.0, 0.0)); 
 
         metrisca::parallel_for(0, steps.size(), [&](size_t first, size_t last, bool is_main_thread) {
-            for (size_t stepIdx = 0; stepIdx != steps.size(); ++stepIdx)
+            for (size_t stepIdx = first; stepIdx != last; ++stepIdx)
             {
                 const auto& log_probabilities = keyProbabilities[stepIdx];
 
@@ -186,7 +187,7 @@ namespace metrisca {
                     for (size_t key = 0; key != 256; ++key) {
                         double value = log_probabilities[keyByte][key];
 
-                        if (std::isfinite(value) && !std::isnan(value)) {
+                        if (IS_VALID_DOUBLE(value)) {
                             max = std::max(max, value);
                             min = std::min(min, value);
                         }
@@ -205,7 +206,7 @@ namespace metrisca {
                         double value = log_probabilities[keyByte][key];
 
                         // Skip invalid probabilities entry sample
-                        if (!std::isfinite(value) || std::isnan(value))
+                        if (!IS_VALID_DOUBLE(value))
                             continue;
                         
                         // Find corresponding bin within histogram and increment it
@@ -238,14 +239,13 @@ namespace metrisca {
             // Determine the bin in which the real key should be in theory
             double log_probability_correct_key = 0.0;
             for (size_t keyByte = 0; keyByte != m_Key.size(); ++keyByte) {
-                log_probability_correct_key += entry[keyByte][m_Key[keyByte]];
-            }
+                double increment = entry[keyByte][m_Key[keyByte]];
 
-            // If the probability of the correct key is not valid
-            if (!std::isfinite(log_probability_correct_key) || std::isnan(log_probability_correct_key)) {
-                METRISCA_ERROR("The log_probability of the correct key is equal to -inf");
-                writer << steps[stepIdx] << "nan" << "nan" << "nan" << csv::EndRow;
-                continue;
+                if (IS_VALID_DOUBLE(increment))
+                    log_probability_correct_key += increment;
+                else {
+                    METRISCA_WARN("The log_probability for byte {} and value {} (with {} traces) is not defined", keyByte, m_Key[keyByte], steps[stepIdx]);
+                }
             }
 
             // Find the corresponding bin
