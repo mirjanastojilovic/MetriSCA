@@ -169,51 +169,62 @@ namespace metrisca {
         std::vector<std::vector<uint32_t>> histograms; // A list of all of the output histograms
         std::vector<std::pair<double, double>> minMaxValues; // A list of min/max for each matrix
 
-        for (size_t stepIdx = 0; stepIdx != steps.size(); ++stepIdx)
-        {
-            auto& log_probabilities = keyProbabilities[stepIdx];
+        // Because the following code is executed in parallel we must ensure the container won't be resized during
+        // execution
+        histograms.resize(steps.size(), {}); 
+        minMaxValues.resize(steps.size(), std::make_pair(0.0, 0.0)); 
 
-            // Find the minimum & maximum of all log_probabilities (notice -inf is ignored)
-            double min = DOUBLE_INFINITY, max = -DOUBLE_INFINITY;
-            for (size_t keyByte = 0; keyByte != m_Key.size(); ++keyByte) {
-                for (size_t key = 0; key != 256; key++) {
-                    double value = log_probabilities[keyByte][key];
+        metrisca::parallel_for(0, steps.size(), [&](size_t first, size_t last, bool is_main_thread) {
+            for (size_t stepIdx = 0; stepIdx != steps.size(); ++stepIdx)
+            {
+                const auto& log_probabilities = keyProbabilities[stepIdx];
 
-                    if (std::isfinite(value) && !std::isnan(value)) {
-                        max = std::max(max, value);
-                        min = std::min(min, value);
+                // Find the minimum/maximum of each log_probabilities (non standard value are skipped)
+                double min = DOUBLE_INFINITY, max = -DOUBLE_INFINITY;
+
+                for (size_t keyByte = 0; keyByte != m_Key.size(); ++keyByte) {
+                    for (size_t key = 0; key != 256; ++key) {
+                        double value = log_probabilities[keyByte][key];
+
+                        if (std::isfinite(value) && !std::isnan(value)) {
+                            max = std::max(max, value);
+                            min = std::min(min, value);
+                        }
                     }
                 }
-            }
 
-            minMaxValues.push_back(std::make_pair(min, max));
+                minMaxValues[stepIdx] = std::make_pair(min, max);
 
-            // First compute the histogram
-            Matrix<uint32_t> histogram(m_BinCount, m_Key.size());
-            for (size_t keyByte = 0; keyByte != m_Key.size(); ++keyByte) {
-                histogram.FillRow(keyByte, 0);
+                // Compute the histogram 
+                Matrix<uint32_t> histogram(m_BinCount, m_Key.size());
+                for (size_t keyByte = 0; keyByte != m_Key.size(); ++keyByte) {
+                    histogram.FillRow(keyByte, 0);
 
-                for (size_t key = 0; key != 256; key++) {
-                    double value = log_probabilities[keyByte][key];
+                    for (size_t key = 0; key != 256; ++key) {
+                        // Retrieve the value corresponding to the current key-byte & key
+                        double value = log_probabilities[keyByte][key];
 
-                    // Skip no-probability entry sample
-                    if (value == -DOUBLE_INFINITY) continue;
-
-                    size_t bin = numerics::FindBin(value, min, max, m_BinCount);
-                    histogram(keyByte, bin) += 1;
+                        // Skip invalid probabilities entry sample
+                        if (!std::isfinite(value) || std::isnan(value))
+                            continue;
+                        
+                        // Find corresponding bin within histogram and increment it
+                        size_t bin = numerics::FindBin(value, min, max, m_BinCount);
+                        histogram(keyByte, bin) += 1;
+                    }
                 }
-            }
 
-            // Compute the convolution between each sample
-            auto first_row = histogram.GetRow(0);
-            std::vector<uint32_t> conv(first_row.begin(), first_row.end()); // So not optimized it make me sick (aka hard copy)
-            for (size_t i = 1; i < m_Key.size(); ++i) {
-                conv = numerics::Convolve<uint32_t>(nonstd::span<uint32_t>(conv.begin(), conv.end()), histogram.GetRow(i));
+                // Compute the convolution between each sample
+                auto first_row = histogram.GetRow(0);
+                std::vector<uint32_t> conv(first_row.begin(), first_row.end()); // So un-optimized that it make me sick (hard copy)
+                for (size_t i = 1; i < m_Key.size(); ++i) {
+                    conv = numerics::Convolve<uint32_t>(nonstd::span<uint32_t>(conv.begin(), conv.end()), histogram.GetRow(i));
+                }
+                
+                // Finally add the last histogram to the output list
+                histograms[stepIdx] = std::move(conv);
             }
-
-            // Finally add the last histogram to the output list
-            histograms.push_back(std::move(conv));
-        }
+        });
 
         // Computing key rank for each histograms
         writer << "number-of-traces" << "lower_bound" << "upper_bound" << "rank" << csv::EndRow;
@@ -230,15 +241,15 @@ namespace metrisca {
                 log_probability_correct_key += entry[keyByte][m_Key[keyByte]];
             }
 
-            // If equal to -infinity ( :'( )
-            if (log_probability_correct_key == -DOUBLE_INFINITY  || std::isnan(log_probability_correct_key)) {
+            // If the probability of the correct key is not valid
+            if (!std::isfinite(log_probability_correct_key) || std::isnan(log_probability_correct_key)) {
                 METRISCA_ERROR("The log_probability of the correct key is equal to -inf");
                 writer << steps[stepIdx] << "nan" << "nan" << "nan" << csv::EndRow;
                 continue;
             }
 
             // Find the corresponding bin
-            size_t correct_key_bin = numerics::FindBin(log_probability_correct_key, min, max, m_BinCount);
+            size_t correct_key_bin = numerics::FindBin(log_probability_correct_key, min * m_Key.size(), max * m_Key.size(), histogram.size());
 
             // Compute the overall key rank (and bounds the bin quantization error) using the histogram
             size_t lower_bound = 0;
