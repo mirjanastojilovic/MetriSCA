@@ -54,10 +54,6 @@ namespace metrisca {
         auto bin_count = args.GetUInt32(ARG_NAME_BIN_COUNT);
         m_BinCount = bin_count.value_or(10000);
         
-        
-
-
-
         // Sample & trace count/step
         auto sample_start = args.GetUInt32(ARG_NAME_SAMPLE_START);
         auto sample_end = args.GetUInt32(ARG_NAME_SAMPLE_END);
@@ -112,43 +108,23 @@ namespace metrisca {
 
         std::atomic_bool isError = false;
         Error error;
-        indicators::ProgressBar progressBar{
-            indicators::option::BarWidth{50},
-            indicators::option::MaxProgress{ steps.size() * m_Key.size() },
-            indicators::option::PrefixText{ "Computing probabilities " },
-            indicators::option::ShowElapsedTime{ true },
-            indicators::option::ShowRemainingTime{ true },
-            indicators::option::ShowPercentage{ true }
-        };
-        progressBar.set_progress(0);
 
-        metrisca::parallel_for(0, steps.size() * m_Key.size(), [&](size_t first, size_t last, bool is_main_thread) {
-            for(size_t idx = first; idx != last; idx++) {
-                if (isError) return; 
-                size_t keyByteIdx = idx % m_Key.size();
-                size_t stepIdx = idx / m_Key.size();
+        metrisca::parallel_for("Computing probabilities", 0, steps.size() * m_Key.size(), [&](size_t idx) {
+            if (isError) return; 
 
-                auto result = ComputeProbabilities(steps[stepIdx], keyByteIdx);
-                if (result.IsError()) {
-                    METRISCA_ERROR("Fail to compute probabilities with {} traces (key-byte {})", steps[stepIdx], keyByteIdx);
-                    isError = true;
-                    error = result.Error();
-                    return;
-                }
-                keyProbabilities[stepIdx][keyByteIdx] = result.Value();
+            size_t keyByteIdx = idx % m_Key.size();
+            size_t stepIdx = idx / m_Key.size();
 
-                {
-                    std::lock_guard guard(m_GlobalLock);
-                    progressBar.tick();
-                    progressBar.set_option(indicators::option::PostfixText{ std::to_string(progressBar.current()) + "/" + std::to_string(steps.size() * m_Key.size()) + " " });
-                }
+            auto result = ComputeProbabilities(steps[stepIdx], keyByteIdx);
+            if (result.IsError()) {
+                METRISCA_ERROR("Fail to compute probabilities with {} traces (key-byte {})", steps[stepIdx], keyByteIdx);
+                isError = true;
+                error = result.Error();
+                return;
             }
+            keyProbabilities[stepIdx][keyByteIdx] = result.Value();
         });
         
-        progressBar.set_progress(steps.size() * m_Key.size());
-        progressBar.set_option(indicators::option::PostfixText{ "  Completed  " });
-        progressBar.mark_as_completed();
-
         if (isError) {
             return error;
         }
@@ -169,66 +145,72 @@ namespace metrisca {
         METRISCA_INFO("Computing histogram in order to approximate the rank of the whole key within our model with {} bins", m_BinCount);
         std::vector<std::vector<uint32_t>> histograms; // A list of all of the output histograms
         std::vector<std::pair<double, double>> minMaxValues; // A list of min/max for each matrix
+        std::vector<size_t> totalCounts; // Sum over the histogram
 
         // Because the following code is executed in parallel we must ensure the container won't be resized during
         // execution
         histograms.resize(steps.size(), {}); 
         minMaxValues.resize(steps.size(), std::make_pair(0.0, 0.0)); 
+        totalCounts.resize(steps.size(), 0);
 
-        metrisca::parallel_for(0, steps.size(), [&](size_t first, size_t last, bool is_main_thread) {
-            for (size_t stepIdx = first; stepIdx != last; ++stepIdx)
-            {
-                const auto& log_probabilities = keyProbabilities[stepIdx];
+        metrisca::parallel_for("Aggregating histograms together", 0, steps.size(), [&](size_t stepIdx) {
+            const auto& log_probabilities = keyProbabilities[stepIdx];
 
-                // Find the minimum/maximum of each log_probabilities (non standard value are skipped)
-                double min = DOUBLE_INFINITY, max = -DOUBLE_INFINITY;
+            // Find the minimum/maximum of each log_probabilities (non standard value are skipped)
+            double min = DOUBLE_INFINITY, max = -DOUBLE_INFINITY;
 
-                for (size_t keyByte = 0; keyByte != m_Key.size(); ++keyByte) {
-                    for (size_t key = 0; key != 256; ++key) {
-                        double value = log_probabilities[keyByte][key];
+            for (size_t keyByte = 0; keyByte != m_Key.size(); ++keyByte) {
+                for (size_t key = 0; key != 256; ++key) {
+                    double value = log_probabilities[keyByte][key];
 
-                        if (IS_VALID_DOUBLE(value)) {
-                            max = std::max(max, value);
-                            min = std::min(min, value);
-                        }
+                    if (IS_VALID_DOUBLE(value)) {
+                        max = std::max(max, value);
+                        min = std::min(min, value);
                     }
                 }
-
-                minMaxValues[stepIdx] = std::make_pair(min, max);
-
-                // Compute the histogram 
-                Matrix<uint32_t> histogram(m_BinCount, m_Key.size());
-                for (size_t keyByte = 0; keyByte != m_Key.size(); ++keyByte) {
-                    histogram.FillRow(keyByte, 0);
-
-                    for (size_t key = 0; key != 256; ++key) {
-                        // Retrieve the value corresponding to the current key-byte & key
-                        double value = log_probabilities[keyByte][key];
-
-                        // Skip invalid probabilities entry sample
-                        if (!IS_VALID_DOUBLE(value))
-                            continue;
-                        
-                        // Find corresponding bin within histogram and increment it
-                        size_t bin = numerics::FindBin(value, min, max, m_BinCount);
-                        histogram(keyByte, bin) += 1;
-                    }
-                }
-
-                // Compute the convolution between each sample
-                auto first_row = histogram.GetRow(0);
-                std::vector<uint32_t> conv(first_row.begin(), first_row.end()); // So un-optimized that it make me sick (hard copy)
-                for (size_t i = 1; i < m_Key.size(); ++i) {
-                    conv = numerics::Convolve<uint32_t>(nonstd::span<uint32_t>(conv.begin(), conv.end()), histogram.GetRow(i));
-                }
-                
-                // Finally add the last histogram to the output list
-                histograms[stepIdx] = std::move(conv);
             }
+
+            minMaxValues[stepIdx] = std::make_pair(min, max);
+
+            // Compute the histogram 
+            Matrix<uint32_t> histogram(m_BinCount, m_Key.size());
+            for (size_t keyByte = 0; keyByte != m_Key.size(); ++keyByte) {
+                histogram.FillRow(keyByte, 0);
+
+                for (size_t key = 0; key != 256; ++key) {
+                    // Retrieve the value corresponding to the current key-byte & key
+                    double value = log_probabilities[keyByte][key];
+
+                    // Skip invalid probabilities entry sample
+                    if (!IS_VALID_DOUBLE(value))
+                        continue;
+                    
+                    // Find corresponding bin within histogram and increment it
+                    size_t bin = numerics::FindBin(value, min, max, m_BinCount);
+                    histogram(keyByte, bin) += 1;
+                }
+            }
+
+            // Compute the convolution between each sample
+            auto first_row = histogram.GetRow(0);
+            std::vector<uint32_t> conv(first_row.begin(), first_row.end()); // So un-optimized that it make me sick (hard copy)
+            for (size_t i = 1; i < m_Key.size(); ++i) {
+                conv = numerics::Convolve<uint32_t>(nonstd::span<uint32_t>(conv.begin(), conv.end()), histogram.GetRow(i));
+            }
+
+            // Iterate through the histogram
+            size_t count = 0;
+            for (uint32_t v : conv) {
+                count += v;
+            }
+            
+            // Finally add the last histogram to the output list
+            histograms[stepIdx] = std::move(conv);
+            totalCounts[stepIdx] = count;
         });
 
         // Computing key rank for each histograms
-        writer << "number-of-traces" << "lower_bound" << "upper_bound" << "rank" << csv::EndRow;
+        writer << "number-of-traces" << "lower_bound" << "upper_bound" << "rank" << "histogram-entry" << csv::EndRow;
 
         METRISCA_INFO("Computing and bounding key-rank of the real key");
         for (size_t stepIdx = 0; stepIdx != steps.size(); ++stepIdx) {
@@ -256,7 +238,7 @@ namespace metrisca {
             size_t upper_bound = 0;
             size_t rank = 0;
 
-            for(size_t i = correct_key_bin + m_Key.size(); i < m_BinCount; i++) {
+            for(size_t i = correct_key_bin + m_Key.size(); i < histogram.size(); i++) {
                 lower_bound += histogram[i];
             }
 
@@ -272,7 +254,7 @@ namespace metrisca {
             upper_bound += rank;
 
             // Output these values to the file
-            writer << steps[stepIdx] << lower_bound << upper_bound << rank << csv::EndRow;
+            writer << steps[stepIdx] << lower_bound << upper_bound << rank << totalCounts[stepIdx] << csv::EndRow;
         }
 
         // Return success of the operatrion
