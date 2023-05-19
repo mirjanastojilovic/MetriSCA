@@ -145,7 +145,7 @@ namespace metrisca {
         METRISCA_INFO("Computing histogram in order to approximate the rank of the whole key within our model with {} bins", m_BinCount);
         std::vector<std::vector<uint32_t>> histograms; // A list of all of the output histograms
         std::vector<std::pair<double, double>> minMaxValues; // A list of min/max for each matrix
-        std::vector<size_t> totalCounts; // Sum over the histogram
+        std::vector<uint64_t> totalCounts; // Sum over the histogram
 
         // Because the following code is executed in parallel we must ensure the container won't be resized during
         // execution
@@ -199,7 +199,7 @@ namespace metrisca {
             }
 
             // Iterate through the histogram
-            size_t count = 0;
+            uint64_t count = 0;
             for (uint32_t v : conv) {
                 count += v;
             }
@@ -208,6 +208,21 @@ namespace metrisca {
             histograms[stepIdx] = std::move(conv);
             totalCounts[stepIdx] = count;
         });
+
+        // Dump the output histogram to the file
+        METRISCA_INFO("Writing histogram to the file");
+        writer << "number-of-traces" << "histograms..." << csv::EndRow;
+
+        for (size_t stepIdx = 0; stepIdx != steps.size(); ++stepIdx) {
+            writer << steps[stepIdx];
+
+            // Print every entry within histograms
+            for (uint32_t entry : histograms[stepIdx]) {
+                writer << entry;
+            }
+            writer << csv::EndRow;
+        } 
+        writer << csv::Flush;
 
         // Computing key rank for each histograms
         writer << "number-of-traces" << "lower_bound" << "upper_bound" << "rank" << "histogram-entry" << csv::EndRow;
@@ -227,6 +242,9 @@ namespace metrisca {
                     log_probability_correct_key += increment;
                 else {
                     METRISCA_WARN("The log_probability for byte {} and value {} (with {} traces) is not defined", keyByte, m_Key[keyByte], steps[stepIdx]);
+
+                    // In this scenario we cannot infer the given key byte, as such we can take the worst value possible
+                    log_probability_correct_key += min;
                 }
             }
 
@@ -242,11 +260,11 @@ namespace metrisca {
                 lower_bound += histogram[i];
             }
 
-            for (size_t i = correct_key_bin; i < correct_key_bin + m_Key.size(); i++) {
+            for (size_t i = correct_key_bin; i < correct_key_bin + m_Key.size() && i < histogram.size(); i++) {
                 rank += histogram[i];
             }
 
-            for(size_t i = ((correct_key_bin < m_Key.size()) ? 0 : (correct_key_bin - m_Key.size())); i < correct_key_bin; i++) {
+            for(size_t i = ((correct_key_bin < m_Key.size()) ? 0 : (correct_key_bin - m_Key.size())); i < correct_key_bin && i < histogram.size(); i++) {
                 upper_bound += histogram[i];
             }
             
