@@ -16,7 +16,7 @@
 
 namespace metrisca {
 
-    class RankEnumerationMetric : public BasicMetricPlugin {
+    class KeyEnumerationMetric : public BasicMetricPlugin {
     public:
 
         virtual Result<void, Error> Init(const ArgumentList& args) override;

@@ -112,6 +112,21 @@ namespace metrisca {
                 command->AddSubParser(parser);
             }
 
+            // Key rank enumeration subcommand
+            {
+                ArgumentParser parser("key_enumeration", "Perform a full key enumeration from the most probable to the least probable.", "metric");
+                parser.AddPositionalArgument(ARG_NAME_DATASET, ArgumentType::Dataset, "The alias of the dataset to use.");
+                parser.AddOptionArgument(ARG_NAME_MODEL, { "-m", "--model" }, ArgumentType::String, "The identifier of the power model to use.");
+                parser.AddOptionArgument(ARG_NAME_DISTINGUISHER, { "-d", "--distinguisher" }, ArgumentType::String, "The identifier of the distinguisher to use.");
+                parser.AddOptionArgument(ARG_NAME_OUTPUT_FILE, { "-o", "--out" }, ArgumentType::String, "The path of the output CSV file to save the result into.");
+                parser.AddOptionArgument(ARG_NAME_TRACE_COUNT, { "-t", "--traces" }, ArgumentType::UInt32, "The maximum number of traces to use during analysis. Default: #traces in the dataset.", false);
+                parser.AddOptionArgument(ARG_NAME_TRACE_STEP, { "-ts", "--step" }, ArgumentType::UInt32, "If greater than zero, computes the same metric with an increasing number of traces starting at <STEP> up to <TRACES>", "0");
+                parser.AddOptionArgument(ARG_NAME_SAMPLE_START, { "-s", "--start" }, ArgumentType::UInt32, "The index of the first sample to analyse.", "0");
+                parser.AddOptionArgument(ARG_NAME_SAMPLE_END, { "-e", "--end" }, ArgumentType::UInt32, "The non-inclusive index of the last sample to analyse. Default: #samples in the dataset.", false);
+                parser.AddOptionArgument(ARG_NAME_ENUMERATED_KEY_COUNT, { "-kc", "--key-count" }, ArgumentType::UInt32, "Number of key being enumerated", "10000");
+                command->AddSubParser(parser);
+            }
+
             // Rank subcommand
             {
                 ArgumentParser parser("rank", "Compute the prediction rank of each key for an increasing number of traces.", "metric");

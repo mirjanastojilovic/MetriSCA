@@ -6,7 +6,7 @@
  * BSD-style license that can be found in the LICENSE.md file.
  */
 
-#include "metrisca/metrics/rank_enumeration_metric.hpp"
+#include "metrisca/metrics/key_enumeration_metric.hpp"
 
 #include "metrisca/core/logger.hpp"
 #include "metrisca/core/errors.hpp"
@@ -27,6 +27,7 @@
 #include <unordered_map>
 #include <set>
 #include <functional>
+#include <algorithm>
 #include <math.h>
 
 
@@ -150,29 +151,53 @@ private:
 
 static LazyGeneratorFn asLazyGenerator(const std::array<double, 256>& elements)
 {
-    std::shared_ptr<size_t> current_index = std::make_shared<size_t>(0);
-    return [&elements, current_index](std::vector<EnumeratedElement>& output, size_t N) -> bool {
-        size_t& cIdx = *current_index;
+    struct Context {
+        std::vector<size_t> reorderBuffer;
+        size_t cIdx;
+    };
+
+    // Create the context object
+    std::shared_ptr<Context> context = std::make_shared<Context>();
+    context->cIdx = 0;
+    context->reorderBuffer.reserve(256);
+    for (size_t i = 0; i != 256; ++i) {
+        context->reorderBuffer.emplace_back(i);
+    }
+
+    // Sort the reorderBuffer so that the corresponding score is in descending order
+    std::sort(context->reorderBuffer.begin(), context->reorderBuffer.end(), [&](size_t lhs, size_t rhs) {
+        return elements[lhs] > elements[rhs];
+    });
+
+    return [&elements, context](std::vector<EnumeratedElement>& output, size_t N) -> bool {
+        size_t& cIdx = context->cIdx;
         
         while (N-- != 0) {
             if (cIdx >= 256) {
                 return true;
             }
 
-            output.emplace_back(elements[cIdx++], PartialKey({ (char) cIdx }));
+            size_t key = context->reorderBuffer[cIdx++];
+            output.emplace_back(elements[key], PartialKey({ (char) key }));
         }
 
         return false;
     };
 }
 
+/**
+ * @brief Combine each LazyGeneratorFn pairwise to construct the generation tree
+ * 
+ * @param array the input LazyGeneratorFn
+ * @return std::vector<LazyGeneratorFn> the resulted combined array
+ */
 static std::vector<LazyGeneratorFn> Combine(const std::vector<LazyGeneratorFn>& array)
 {
-    if (array.size() <= 1) return;
+    if (array.size() <= 1) return array;
 
     std::vector<LazyGeneratorFn> result;
     for (size_t i = 0; i != (array.size() >> 1); i += 2) {
-        result.push_back(std::make_shared<Enumerator>(array[i], array[i+1], 8)->asLazyGenerator());
+        result.emplace_back(std::make_shared<Enumerator>(array[i], array[i+1], 8)->asLazyGenerator());
     }
 
     return result;
@@ -180,7 +205,7 @@ static std::vector<LazyGeneratorFn> Combine(const std::vector<LazyGeneratorFn>& 
 
 namespace metrisca {
 
-    Result<void, Error> RankEnumerationMetric::Init(const ArgumentList& args)
+    Result<void, Error> KeyEnumerationMetric::Init(const ArgumentList& args)
     {
         // First initialize the base plugin
         auto base_result = BasicMetricPlugin::Init(args);
@@ -189,7 +214,7 @@ namespace metrisca {
 
         // Ensure the dataset has fixed key
         if (m_Dataset->GetHeader().KeyMode != KeyGenerationMode::FIXED) {
-            METRISCA_ERROR("RankEnumerationMetric require the key to be fixed accross the entire dataset");
+            METRISCA_ERROR("KeyEnumerationMetric require the key to be fixed accross the entire dataset");
             return Error::UNSUPPORTED_OPERATION;
         }
 
@@ -214,7 +239,7 @@ namespace metrisca {
         return {};
     }
 
-    Result<void, Error> RankEnumerationMetric::Compute()
+    Result<void, Error> KeyEnumerationMetric::Compute()
     {
         // First compute the score for each key for each key byte
         METRISCA_INFO("Computing score(s) for each key and key byte");
@@ -248,15 +273,15 @@ namespace metrisca {
             }
 
             // Finally use the enumerator
-            std::vector<EnumeratedElement>& output;
-            lazyGenerators[0](result, m_EnumeratedKeyCount);
+            std::vector<EnumeratedElement> output;
+            lazyGenerators[0](output, m_EnumeratedKeyCount);
         });
 
         return {};
     }
 
     Result<std::unordered_map<uint32_t, std::vector<std::array<double, 256>>>, Error>
-    RankEnumerationMetric::ComputeScores()
+    KeyEnumerationMetric::ComputeScores()
     {
         std::unordered_map<uint32_t, std::vector<std::array<double, 256>>> scoresPerSteps;
 
@@ -266,7 +291,7 @@ namespace metrisca {
             METRISCA_INFO("Run distinguisher for key byte {}", keyByteIdx);
             auto result = m_Distinguisher->Distinguish();
             if (result.IsError()) {
-                METRISCA_ERROR("RankEnumerationMetric failed to compute scores for key byte {}", keyByteIdx);
+                METRISCA_ERROR("KeyEnumerationMetric failed to compute scores for key byte {}", keyByteIdx);
                 return result.Error();
             }
 
