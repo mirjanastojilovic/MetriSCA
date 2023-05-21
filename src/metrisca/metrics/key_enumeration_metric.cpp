@@ -65,6 +65,7 @@ public:
 
     /**
      * @brief Enumerate next @p N elements 
+     * @return true if there is no longer any element within the stream
      */
     bool next(std::vector<EnumeratedElement>& output, size_t N)
     {
@@ -112,10 +113,8 @@ public:
                 m_Row[bj].partialKey + m_Col[m_ListOfCandidates[bj]].partialKey
             );
 
-            // Update the list of candidates
-            m_ListOfCandidates[bj]++;
-
-             if (m_ListOfCandidates[bj] == 0) {
+            // If the current candidate is the last row, we can add a new row as candidate
+            if (m_ListOfCandidates[bj] == 0) {
                 METRISCA_ASSERT(bj == m_ListOfCandidates.size() - 1);
 
                 // Attempt to push the row
@@ -128,6 +127,9 @@ public:
                     m_ListOfCandidates.emplace_back(0); 
                 }
             }
+
+            // Update the list of candidates
+            m_ListOfCandidates[bj]++;
 
             // Generating more of the column array if required
             if (m_ListOfCandidates[bj] == m_Col.size() && !m_ColMaxOut) {
