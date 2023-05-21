@@ -26,11 +26,13 @@
 #include <unordered_set>
 #include <unordered_map>
 #include <set>
+#include <sstream>
 #include <functional>
 #include <algorithm>
 #include <math.h>
 
 
+#define DOUBLE_NAN (std::numeric_limits<double>::signaling_NaN())
 #define DOUBLE_INFINITY (std::numeric_limits<double>::infinity())
 
 typedef std::string PartialKey; // Use to partialKey each byte of the key
@@ -297,7 +299,7 @@ namespace metrisca {
         METRISCA_INFO("Writing result to the output file");
 
         CSVWriter writer(m_OutputFile);
-        writer << "trace-count" << "rank";
+        writer << "trace-count" << "rank" << "score" << "max-score" << "best-key" << csv::EndRow;
 
         // Generate the key string
         PartialKey key(m_Key.begin(), m_Key.end());
@@ -305,14 +307,28 @@ namespace metrisca {
         for (size_t idx = 0; idx != steps.size(); idx++) {
             // Find the rank of the correct key
             size_t rank = 1;
+            double maxScore = DOUBLE_NAN, score = DOUBLE_NAN;
+            std::string bestKey = "!--- <Nan> ---!";
+
             for (const EnumeratedElement& element : outputPerSteps[steps[idx]]) {
+                if (rank == 1) {
+                    maxScore = element.score;
+                    std::ostringstream ss;
+
+                    for (char c : element.partialKey) {
+                        ss << std::setw(2) << std::setfill('0') << std::hex << (int) (uint8_t) c;
+                    }
+                    bestKey = std::move(ss).str();
+                }
+
                 rank++;
                 if (element.partialKey == key) {
+                    score = element.score;
                     break;
                 }
             }
-            
-            writer << steps[idx] << rank << csv::EndRow; 
+
+            writer << steps[idx] << rank << score << maxScore << bestKey << csv::EndRow; 
         }
 
 
@@ -349,7 +365,9 @@ namespace metrisca {
 
                     // Find the sample that "leaks" the most, this is the score
                     for (size_t sample = 0; sample != matrix.GetWidth(); ++sample) {
-                        score = std::max(matrix(key, sample), score);
+                        // 1e-9 is to ensure no -infinity appears, it should have no effect whatsover right ? 
+                        double candidate = std::log(1e-9 + std::abs(matrix(key, sample)));
+                        score = std::max(candidate, score);
                     }
 
                     scoresPerSteps[steps][keyByteIdx][key] = score;
