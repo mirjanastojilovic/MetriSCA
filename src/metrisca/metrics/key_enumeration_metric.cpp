@@ -66,6 +66,19 @@ public:
      */
     bool next(std::vector<EnumeratedElement>& output, size_t N)
     {
+        // Ensures that the row/col is at least one element (for bootstrap)
+        if (m_Row.empty()) {
+            if (m_LazyRowGen(m_Row, 1)) {
+                return true;
+            }
+        }
+
+        if (m_Col.empty()) {
+            if (m_LazyColGen(m_Col, 1)) {
+                return true;
+            }
+        }
+
         // For each of the entry
         while (N-- != 0) {
             // Find the best candidate
@@ -100,7 +113,7 @@ public:
             // Update the list of candidates
             m_ListOfCandidates[bj]++;
 
-            if (m_ListOfCandidates[bj] == 0) {
+             if (m_ListOfCandidates[bj] == 0) {
                 METRISCA_ASSERT(bj == m_ListOfCandidates.size() - 1);
 
                 // Attempt to push the row
@@ -169,7 +182,7 @@ static LazyGeneratorFn asLazyGenerator(const std::array<double, 256>& elements)
         return elements[lhs] > elements[rhs];
     });
 
-    return [&elements, context](std::vector<EnumeratedElement>& output, size_t N) -> bool {
+    return [elements, context](std::vector<EnumeratedElement>& output, size_t N) -> bool {
         size_t& cIdx = context->cIdx;
         
         while (N-- != 0) {
@@ -196,8 +209,8 @@ static std::vector<LazyGeneratorFn> Combine(const std::vector<LazyGeneratorFn>& 
     if (array.size() <= 1) return array;
 
     std::vector<LazyGeneratorFn> result;
-    for (size_t i = 0; i != (array.size() >> 1); i += 2) {
-        result.emplace_back(std::make_shared<Enumerator>(array[i], array[i+1], 8)->asLazyGenerator());
+    for (size_t i = 0; i < array.size(); i += 2) {
+        result.emplace_back(std::make_shared<Enumerator>(array[i], array[i+1], 1)->asLazyGenerator());
     }
 
     return result;
@@ -256,6 +269,8 @@ namespace metrisca {
         std::vector<uint32_t> steps(scoresPerSteps.size());
         std::transform(scoresPerSteps.begin(), scoresPerSteps.end(), steps.begin(), [](auto x) { return x.first; });
 
+        std::unordered_map<uint32_t, std::vector<EnumeratedElement>> outputPerSteps;
+
         metrisca::parallel_for(0, scoresPerSteps.size(), [&](size_t idx)
         {
             // Retrieve the score corresponding with the current step
@@ -275,7 +290,31 @@ namespace metrisca {
             // Finally use the enumerator
             std::vector<EnumeratedElement> output;
             lazyGenerators[0](output, m_EnumeratedKeyCount);
+            outputPerSteps[steps[idx]] = std::move(output);
         });
+
+        // Finally write the output to the file
+        METRISCA_INFO("Writing result to the output file");
+
+        CSVWriter writer(m_OutputFile);
+        writer << "trace-count" << "rank";
+
+        // Generate the key string
+        PartialKey key(m_Key.begin(), m_Key.end());
+
+        for (size_t idx = 0; idx != steps.size(); idx++) {
+            // Find the rank of the correct key
+            size_t rank = 1;
+            for (const EnumeratedElement& element : outputPerSteps[steps[idx]]) {
+                rank++;
+                if (element.partialKey == key) {
+                    break;
+                }
+            }
+            
+            writer << steps[idx] << rank << csv::EndRow; 
+        }
+
 
         return {};
     }
