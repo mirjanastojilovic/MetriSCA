@@ -220,7 +220,7 @@ namespace metrisca {
 
         // Retrieve the number of enumerated key count
         auto enumerated_key_count = args.GetUInt32(ARG_NAME_ENUMERATED_KEY_COUNT);
-        if (enumerated_key_count.has_value()) {
+        if (!enumerated_key_count.has_value()) {
             return Error::INVALID_ARGUMENT;
         }
         m_EnumeratedKeyCount = enumerated_key_count.value();
