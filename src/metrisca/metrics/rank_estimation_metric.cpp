@@ -85,7 +85,6 @@ namespace metrisca {
 
     Result<void, Error> RankEstimationMetric::Compute() 
     {
-
         // Conveniance constant
         const size_t number_of_traces = m_TraceCount;
         const size_t number_of_samples = m_SampleCount;

@@ -116,6 +116,7 @@ namespace metrisca {
             {
                 ArgumentParser parser("key_enumeration", "Perform a full key enumeration from the most probable to the least probable.", "metric");
                 parser.AddPositionalArgument(ARG_NAME_DATASET, ArgumentType::Dataset, "The alias of the dataset to use.");
+                parser.AddPositionalArgument(ARG_NAME_TRAINING_DATASET, ArgumentType::Dataset, "The training dataset to be used for profiling");
                 parser.AddOptionArgument(ARG_NAME_MODEL, { "-m", "--model" }, ArgumentType::String, "The identifier of the power model to use.");
                 parser.AddOptionArgument(ARG_NAME_DISTINGUISHER, { "-d", "--distinguisher" }, ArgumentType::String, "The identifier of the distinguisher to use.");
                 parser.AddOptionArgument(ARG_NAME_OUTPUT_FILE, { "-o", "--out" }, ArgumentType::String, "The path of the output CSV file to save the result into.");
