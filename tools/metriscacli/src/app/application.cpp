@@ -118,7 +118,7 @@ namespace metrisca {
                 parser.AddPositionalArgument(ARG_NAME_DATASET, ArgumentType::Dataset, "The alias of the dataset to use.");
                 parser.AddPositionalArgument(ARG_NAME_TRAINING_DATASET, ArgumentType::Dataset, "The training dataset to be used for profiling");
                 parser.AddOptionArgument(ARG_NAME_MODEL, { "-m", "--model" }, ArgumentType::String, "The identifier of the power model to use.");
-                parser.AddOptionArgument(ARG_NAME_DISTINGUISHER, { "-d", "--distinguisher" }, ArgumentType::String, "The identifier of the distinguisher to use.");
+                parser.AddOptionArgument(ARG_NAME_OUTPUT_KEY_COUNT, { "-Kc", "--output-key-count" }, ArgumentType::UInt32, "Number of the enumerated key being outputted to the output file. By default, 0 and only output log2 of the rank of the real key", "0");
                 parser.AddOptionArgument(ARG_NAME_OUTPUT_FILE, { "-o", "--out" }, ArgumentType::String, "The path of the output CSV file to save the result into.");
                 parser.AddOptionArgument(ARG_NAME_TRACE_COUNT, { "-t", "--traces" }, ArgumentType::UInt32, "The maximum number of traces to use during analysis. Default: #traces in the dataset.", false);
                 parser.AddOptionArgument(ARG_NAME_TRACE_STEP, { "-ts", "--step" }, ArgumentType::UInt32, "If greater than zero, computes the same metric with an increasing number of traces starting at <STEP> up to <TRACES>", "0");

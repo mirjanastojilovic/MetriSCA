@@ -26,11 +26,12 @@ namespace metrisca {
         virtual Result<void, Error> Compute() override;
 
     private:
-        Result<std::array<double, 256>, Error> ComputeScores(const ProfileOutput& profileOutput, size_t traceCount, size_t keyByteIdx);
+        Result<std::array<double, 256>, Error> ComputeScores(const ProfileOutput& profileOutput, size_t traceCount, size_t keyByteIdx, const std::vector<Matrix<int32_t>>& models);
         Result<ProfileOutput, Error> ProfileStage();
 
         std::vector<uint8_t> m_Key{}; /*<! Key of the actual dataset (not the training one) */
         uint32_t m_EnumeratedKeyCount; /*<! Number of key being enumerated by the algorithm */
+        uint32_t m_OutputEnumeratedKeyCount; /*<! Number of key being outputted to the file along with their scores */
 
         std::shared_ptr<TraceDataset> m_Dataset{ nullptr };
         std::shared_ptr<TraceDataset> m_TrainingDataset{ nullptr };

@@ -94,6 +94,7 @@ namespace metrisca {
 #define ARG_NAME_FIXED_DATASET            "fixed"
 #define ARG_NAME_RANDOM_DATASET           "random"
 #define ARG_NAME_ENUMERATED_KEY_COUNT     "enumerated-key-count"
+#define ARG_NAME_OUTPUT_KEY_COUNT         "output-key-count"
 #define ARG_NAME_BIN_COUNT                "bin-count"
 #define ARG_NUMBER_SAMPLE_FILTER          "number-sample-filter"
 }

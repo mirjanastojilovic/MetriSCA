@@ -233,7 +233,7 @@ namespace metrisca {
 
         // Secondly retrieve both database
         auto dataset = args.GetDataset(ARG_NAME_DATASET);
-        auto training_dataset = args.GetString(ARG_NAME_TRAINING_DATASET);
+        auto training_dataset = args.GetDataset(ARG_NAME_TRAINING_DATASET);
 
         if(!dataset.has_value())
             return Error::MISSING_ARGUMENT;
@@ -262,6 +262,16 @@ namespace metrisca {
             return Error::UNSUPPORTED_OPERATION;
         }
 
+        // Find the model
+        auto model = args.GetString(ARG_NAME_MODEL);
+        if(!model.has_value())
+            return Error::MISSING_ARGUMENT;
+
+        auto model_or_error = PluginFactory::The().ConstructAs<PowerModelPlugin>(PluginType::PowerModel, model.value(), args);
+        if(model_or_error.IsError())
+            return model_or_error.Error();
+        m_Model = model_or_error.Value();
+
         // Retrieve pratical information about the dataset
         auto sample_start = args.GetUInt32(ARG_NAME_SAMPLE_START);
         auto sample_end = args.GetUInt32(ARG_NAME_SAMPLE_END);
@@ -285,6 +295,18 @@ namespace metrisca {
             return Error::INVALID_ARGUMENT;
         }
         m_EnumeratedKeyCount = enumerated_key_count.value();
+
+        // Retrieve the number of output enumerated key count
+        auto output_enumerated_key_count = args.GetUInt32(ARG_NAME_OUTPUT_KEY_COUNT);
+        if (!output_enumerated_key_count.has_value()) {
+            return Error::INVALID_ARGUMENT;
+        }
+        m_OutputEnumeratedKeyCount = output_enumerated_key_count.value();
+
+        if (m_OutputEnumeratedKeyCount > m_EnumeratedKeyCount) {
+            METRISCA_ERROR("Cannot output more keys than the total number of key enumerated");
+            return Error::UNSUPPORTED_OPERATION;
+        }
 
         // Retrieve the key from the dataset
         auto key_span = m_Dataset->GetKey(0);
@@ -317,6 +339,21 @@ namespace metrisca {
         if (profileResult.IsError()) return profileResult.Error();
         ProfileOutput profileOutput = profileResult.Value();
 
+        // Modelize expected result for each entry
+        METRISCA_INFO("Modelize the testing dataset using the provided modelling function");
+        std::vector<Matrix<int32_t>> models(m_Key.size());
+        m_Model->SetDataset(m_Dataset);
+        for (size_t byteIdx = 0; byteIdx != m_Key.size(); ++byteIdx) {
+            m_Model->SetByteIndex(byteIdx);
+            
+            auto model = m_Model->Model();
+            if (model.IsError()) {
+                return model.Error();
+            }
+
+            models[byteIdx] = std::move(model.Value());
+        }
+ 
         // First compute the score for each key for each key byte
         METRISCA_INFO("Computing score(s) for each key and key byte");
         std::vector<std::vector<std::array<double, 256>>> scores; // [step][byte][byteValue]
@@ -336,7 +373,7 @@ namespace metrisca {
             size_t keyByteIdx = idx % m_Key.size();
             size_t stepIdx = idx / m_Key.size();
 
-            auto result = ComputeScores(profileOutput, steps[stepIdx], keyByteIdx);
+            auto result = ComputeScores(profileOutput, steps[stepIdx], keyByteIdx, models);
             if (result.IsError()) {
                 METRISCA_ERROR("Fail to compute scores with {} traces (key-byte {})", steps[stepIdx], keyByteIdx);
                 isError = true;
@@ -391,28 +428,16 @@ namespace metrisca {
 
         // Finally write the output to the file
         METRISCA_INFO("Writing result to the output file");
-        writer << "trace-count" << "rank" << "score" << "max-score" << "best-key" << csv::EndRow;
+        writer << "trace-count" << "rank" << "score" << "keys/scores" << csv::EndRow;
 
         // Generate the key string
         PartialKey key(m_Key.begin(), m_Key.end());
 
         for (size_t stepIdx = 0; stepIdx != steps.size(); stepIdx++) {
-            // Find the rank of the correct key
-            size_t rank = 1;
-            double maxScore = DOUBLE_NAN, score = DOUBLE_NAN;
-            std::string bestKey = "!--- <Nan> ---!";
-
+            // Find the rank and score of the correct key
+            size_t rank = 0;
+            double score = DOUBLE_NAN;
             for (const EnumeratedElement& element : outputPerSteps[stepIdx]) {
-                if (rank == 1) {
-                    maxScore = element.score;
-                    std::ostringstream ss;
-
-                    for (char c : element.partialKey) {
-                        ss << std::setw(2) << std::setfill('0') << std::hex << (int) (uint8_t) c;
-                    }
-                    bestKey = std::move(ss).str();
-                }
-
                 rank++;
                 if (element.partialKey == key) {
                     score = element.score;
@@ -420,18 +445,65 @@ namespace metrisca {
                 }
             }
 
-            writer << steps[stepIdx] << rank << score << maxScore << bestKey << csv::EndRow; 
+            writer << steps[stepIdx] << rank << score;
+
+            // Enumerate the required amount of first key
+            for (size_t i = 0; i < m_OutputEnumeratedKeyCount; ++i) {
+                const auto& element = outputPerSteps[stepIdx][i];
+                std::ostringstream ss;
+
+                for (char c : element.partialKey) {
+                    ss << std::setw(2) << std::setfill('0') << std::hex << (int) (uint8_t) c;
+                }
+
+                writer << std::move(ss).str() << element.score;
+            }
+
+            // Finally end the row of the current steps
+            writer << csv::EndRow;
         }
 
         return {};
     }
 
-    Result<std::array<double, 256>, Error> KeyEnumerationMetric::ComputeScores(const ProfileOutput& profileOutput, size_t traceCount, size_t keyByteIdx)
+    Result<std::array<double, 256>, Error> KeyEnumerationMetric::ComputeScores(const ProfileOutput& profileOutput, size_t traceCount, size_t keyByteIdx, const std::vector<Matrix<int32_t>>& models)
     {
+        size_t const sampleCount = m_SampleEnd - m_SampleStart;
         std::array<double, 256> scores;
         scores.fill(0.0);
 
-        // for (size_t )
+        // Finally compute the score under each key hypothesis
+        std::vector<double> error_vector(sampleCount, 0.0);
+        std::vector<double> temp_vector(sampleCount, 0.0);
+
+        for (size_t key = 0; key != 256; key++)
+        {
+            // Compute the error vecotr
+            for (size_t sampleIdx = 0; sampleIdx != sampleCount; ++sampleIdx) {
+                double v = 0.0;
+                double vSquared = 0.0;
+                auto sample = m_Dataset->GetSample(sampleIdx + m_SampleStart);
+
+                for (size_t traceIdx = 0; traceIdx != traceCount; ++traceIdx) {
+                    uint8_t expected_output = (uint8_t) (uint32_t) models[keyByteIdx](key, traceIdx);
+                    double value = ((double) sample[traceIdx]) - ((double) profileOutput[keyByteIdx][sampleIdx][expected_output]);
+                    v += value;
+                    vSquared += value * value;
+                }
+
+                v /= traceCount;
+                vSquared /= traceCount;
+
+                error_vector[sampleIdx] = v / std::sqrt(vSquared - v * v);
+            }
+
+            // Finally compute dot product between the error_vector and the temp_vector
+            double score = 0.0;
+            for (size_t i = 0; i != sampleCount; ++i) {
+                score += error_vector[i] * error_vector[i];
+            }
+            scores[key] = -std::log2(1e-9 + score); // score >= 0
+        }
 
         return scores;
     }
@@ -451,7 +523,7 @@ namespace metrisca {
         Error error;
 
         // Computing profile output
-        metrisca::parallel_for("Computing profiled result for each keybyte", 0, result.size(), [&](size_t byteIdx)
+        metrisca::parallel_for("Profiling for each key byte ", 0, result.size(), [&](size_t byteIdx)
         {
             // If any error
             if (isError) return;
@@ -476,7 +548,7 @@ namespace metrisca {
             std::array<std::vector<size_t>, 256> traceIdxByExpectedOutput;
 
             for (size_t i = 0; i != m_TrainingDataset->GetHeader().NumberOfTraces; ++i) {
-                uint32_t expectedOutput = (uint32_t) model(i, m_TrainingDataset->GetKey(i)[byteIdx]);
+                uint32_t expectedOutput = (uint32_t) model(m_TrainingDataset->GetKey(i)[byteIdx], i);
                 
                 if (expectedOutput >= 256) {
                     if (!isError.exchange(true)) {
@@ -490,21 +562,21 @@ namespace metrisca {
             }
 
             // Compute per-group average for each sample, this is our "prior" knowledge
-            for (size_t key = 0; key != 256; key++) {
+            for (size_t expectedOutput = 0; expectedOutput != 256; expectedOutput++) {
                 for (size_t sIdx = m_SampleStart; sIdx != m_SampleEnd; sIdx++) {
 
                     double value = 0.0;
                     size_t N = 0;
-                    for (size_t i : traceIdxByExpectedOutput[key]) {
+                    for (size_t i : traceIdxByExpectedOutput[expectedOutput]) {
                         N++;
                         value += m_TrainingDataset->GetSample(sIdx)[i];
                     }
 
                     if (N > 0) {
-                        result[byteIdx][sIdx - m_SampleStart][key] = value / N;
+                        result[byteIdx][sIdx - m_SampleStart][expectedOutput] = value / N;
                     }
                     else {
-                        result[byteIdx][sIdx - m_SampleStart][key] = DOUBLE_NAN;
+                        result[byteIdx][sIdx - m_SampleStart][expectedOutput] = DOUBLE_NAN;
                     }
                 }
             }
