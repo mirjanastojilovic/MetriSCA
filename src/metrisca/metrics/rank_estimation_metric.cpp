@@ -20,9 +20,16 @@
 #include "metrisca/core/arg_list.hpp"
 #include "metrisca/core/parallel.hpp"
 
-
 #include <limits>
+#include <atomic>
+#include <unordered_set>
+#include <unordered_map>
+#include <set>
 #include <math.h>
+
+#define DOUBLE_NAN (std::numeric_limits<double>::signaling_NaN())
+#define DOUBLE_INFINITY (std::numeric_limits<double>::infinity())
+#define IS_VALID_DOUBLE(value) (std::isfinite(value) && !std::isnan(value))
 
 namespace metrisca {
 
@@ -46,230 +53,217 @@ namespace metrisca {
         // Retrieve the bin count argument
         auto bin_count = args.GetUInt32(ARG_NAME_BIN_COUNT);
         m_BinCount = bin_count.value_or(10000);
+        
+        // Sample & trace count/step
+        auto sample_start = args.GetUInt32(ARG_NAME_SAMPLE_START);
+        auto sample_end = args.GetUInt32(ARG_NAME_SAMPLE_END);
+        auto trace_count = args.GetUInt32(ARG_NAME_TRACE_COUNT);
+        auto trace_step = args.GetUInt32(ARG_NAME_TRACE_STEP);
+        auto sample_filter = args.GetUInt32(ARG_NUMBER_SAMPLE_FILTER);
+        TraceDatasetHeader header = m_Dataset->GetHeader();
+        m_TraceCount = trace_count.value_or(header.NumberOfTraces);
+        m_TraceStep = trace_step.value_or(0);
+        m_SampleStart = sample_start.value_or(0);
+        m_SampleCount = sample_end.value_or(header.NumberOfSamples) - m_SampleStart;
+        m_SampleFilterCount = sample_filter.value_or(60);
 
-        // Finally return success of the initialization
-        return {};
+        // Sanity checks
+        if(m_SampleCount == 0)
+            return Error::INVALID_ARGUMENT;
+
+        if (m_SampleFilterCount > header.NumberOfSamples)
+            return Error::INVALID_ARGUMENT;
+
+        if(m_SampleStart + m_SampleCount > header.NumberOfSamples)
+            return Error::INVALID_ARGUMENT;
+
+        if(m_TraceCount > header.NumberOfTraces)
+            return Error::INVALID_ARGUMENT;
+
+        return  {};
     }
 
     Result<void, Error> RankEstimationMetric::Compute() 
     {
-        // Define a lazy function for the erf
-        LazyFunction<double, double> lazy_normal_cdf = [](double x) -> double {
-            return 0.5 + std::erf(x) / 2.0;
-        };
+        // Conveniance constant
+        const size_t number_of_traces = m_TraceCount;
+        const size_t number_of_samples = m_SampleCount;
+        const size_t first_sample = m_SampleStart;
+        const size_t last_sample = first_sample + m_SampleCount;
 
-        // Open the csv file and write csv header
+        std::vector<uint32_t> steps = (m_TraceStep > 0) ?
+            numerics::ARange(m_TraceStep, m_TraceCount + 1, m_TraceStep) :
+            std::vector<uint32_t>{ m_TraceCount };
+
+        // Write CSV header
         CSVWriter writer(m_OutputFile);
-        writer << "Keybyte" << "Step";
-        for (size_t i = 0; i < 256; i++) {
-            writer << "value_" + std::to_string(i);
-        }
         writer << csv::EndRow;
 
-        // A temporary matrix to store the update sample (sample - expected value)
-        std::vector<double> temp_samples(m_Dataset->GetHeader().NumberOfTraces);
-        const size_t keyByteCount = m_Dataset->GetHeader().KeySize;
+        // Retrieve key probabilities for each step and each bytes
+        METRISCA_INFO("Retrieving key probabilities");
+        std::vector<std::vector<std::array<double, 256>>> keyProbabilities; // [step][byte][byteValue]
+        keyProbabilities.resize(steps.size());
+        for (auto& elem : keyProbabilities) elem.resize(m_Key.size());
 
-        // Resulting list of matrix
-        // one LogProbabilityEntry per step
-        struct LogProbabilityEntry {
-            Matrix<double> data; // each matrix is (keyByteCount x 256)
-            double min, max; // min and max value in the matrix 
-            
-            inline LogProbabilityEntry(size_t width, size_t height) 
-            : data(width, height),
-              min(std::numeric_limits<double>::infinity()),
-              max(-std::numeric_limits<double>::infinity())
-            { }
-        };
-        std::vector<LogProbabilityEntry> log_probabilities; 
+        std::atomic_bool isError = false;
+        Error error;
+
+        metrisca::parallel_for("Computing probabilities", 0, steps.size() * m_Key.size(), [&](size_t idx) {
+            if (isError) return; 
+
+            size_t keyByteIdx = idx % m_Key.size();
+            size_t stepIdx = idx / m_Key.size();
+
+            auto result = ComputeProbabilities(steps[stepIdx], keyByteIdx);
+            if (result.IsError()) {
+                METRISCA_ERROR("Fail to compute probabilities with {} traces (key-byte {})", steps[stepIdx], keyByteIdx);
+                isError = true;
+                error = result.Error();
+                return;
+            }
+            keyProbabilities[stepIdx][keyByteIdx] = result.Value();
+        });
         
-        // Computing the resulting matrices
-        METRISCA_INFO("Computing log probabilities for each byte in the key ({} bytes)", keyByteCount);
-        for (size_t keyByteIdx = 0; keyByteIdx != keyByteCount; ++keyByteIdx)
-        {
-            // Loggingwriter
-            METRISCA_INFO("Computing key byte {}/{}", keyByteIdx + 1, m_Dataset->GetHeader().PlaintextSize);
-
-            // Retrieve the power model (and evaluate it)
-            METRISCA_INFO("Compute power model for current metric");
-            m_Distinguisher->GetPowerModel()->SetByteIndex(keyByteIdx);
-            auto power_model_or_error = m_Distinguisher->GetPowerModel()->Model();
-            if (power_model_or_error.IsError())
-                return power_model_or_error.Error();
-
-            auto power_model = power_model_or_error.Value();
-
-            // Retrieve the pearson correlation
-            METRISCA_INFO("Compute pearson correlation for the current metric");
-            auto score_or_error = m_Distinguisher->Distinguish();
-            if (score_or_error.IsError())
-                return score_or_error.Error();
-
-            auto score = score_or_error.Value();
-
-            // If this is first key byte, initialize the entire log_probabilities resulting array (and allocate it)
-            if (keyByteIdx == 0) {
-                METRISCA_INFO("Initialize the log probabilities resulting array of Matrices");
-                
-                for (size_t i = 0; i < score.size(); i++) {
-                    log_probabilities.emplace_back(256, keyByteCount);
-                }
-            }
-
-            // Display progress bar
-            indicators::BlockProgressBar lp_progress_bar{
-                indicators::option::BarWidth(80),
-                indicators::option::Start{"["},
-                indicators::option::End{"]"},
-                indicators::option::ShowElapsedTime{ true },
-                indicators::option::ShowRemainingTime{ true },
-                indicators::option::MaxProgress{ score.size() * 256 }
-            };
-
-            // Find the sample that leaks the most (highest pearson correlation with the model
-            METRISCA_INFO("Compute log-likelihood under key hypothesis");
-            for (size_t step = 0; step < score.size(); ++step)
-            {
-                // Find the number of trace in current batch
-                const uint32_t step_trace_count = score[step].first;
-
-                // Find the score (pearson correlation) for the current step
-                const Matrix<double>& scores = score[step].second;
-
-                // Find the corresponding entry in the log_probabilities
-                auto& lpEntry = log_probabilities[step];
-
-                // Start writing the new row
-                writer << keyByteIdx << step;
-
-                // For each key hypothesis find the sample with maximum correlation
-                for (size_t key = 0; key != 256; ++key) {
-                    // Step the progress bar
-                    lp_progress_bar.tick();
-
-                    // Find the sample with best correlation under given key hypothesis
-                    size_t best_correlation_sample = numerics::ArgMax(scores.GetRow(key));
-
-                    // Retrieve the corresponding sample and recenter it based on our 
-                    // hypothesis
-                    auto samples = m_Dataset->GetSample(best_correlation_sample).subspan(m_Distinguisher->GetSampleStart(), step_trace_count);
-                    for (size_t i = 0; i != step_trace_count; ++i) {
-                        temp_samples[i] = samples[i] - (double) power_model(key, m_Distinguisher->GetSampleStart() + i);
-                    }
-
-                    double standard_deviation = numerics::Std(temp_samples.data(), step_trace_count, 0.0);
-
-                    // Pr[k_i | { X_q }] = Pr[{ X_q } | k_i] * Pr[k_i] / Sum{ Pr[{X_q} | k_i] * Pr[k_i] }
-                    double log_proba_under_key_hypothesis = 1.0; // SUM log(Pr[ {X_q} | k_i ])
-                    double cummulated_probability = 0.0; // SUM Pr[ {X_q} | k_i ]
-                    for (size_t sampleIdx = 0; sampleIdx != samples.size(); ++sampleIdx) {
-                        // Retrieve sample
-                        double sample = temp_samples[sampleIdx];
-                        double real_sample = samples[m_Distinguisher->GetSampleStart() + sampleIdx];
-
-                        // Compute the probability of the current sample being measure at the current bin
-                        double previous_bin_threshold = (sample - 0.5) / (METRISCA_SQRT_2 * standard_deviation);
-                        double next_bin_threshold = (sample + 0.5) / (METRISCA_SQRT_2 * standard_deviation);
-
-                        if (real_sample <= 1e-3) {
-                            previous_bin_threshold = -std::numeric_limits<double>::infinity();
-                        }
-                        if (real_sample >= 255 - 1e-3) {
-                            next_bin_threshold = std::numeric_limits<double>::infinity();
-                        }
-
-                        double partial_p = lazy_normal_cdf(next_bin_threshold) - lazy_normal_cdf(previous_bin_threshold);
-
-                        log_proba_under_key_hypothesis += std::log(partial_p);
-                        cummulated_probability += partial_p;
-                    }
-
-                    // Finally compute the log probability
-                    double lp = log_proba_under_key_hypothesis - std::log(cummulated_probability);
-                    lpEntry.data(keyByteIdx, key) = lp;
-                    lpEntry.min = std::min(lp, lpEntry.min);
-                    lpEntry.max = std::max(lp, lpEntry.max);
-                    writer << lp;
-                }
-
-                writer << csv::EndRow;
-            }
-
-            // Terminate the lp progress bar
-            lp_progress_bar.mark_as_completed();
+        if (isError) {
+            return error;
         }
 
-        // Compute the overall histogram as well as the bound of the error introducing when quantizing
-        // the value into discrete bins
-        METRISCA_INFO("Computing histogram with {} bins (for {} steps)", m_BinCount, log_probabilities.size());
-        std::vector<std::vector<uint32_t>> histograms; // All histograms per steps
-        writer << "Histograms" << csv::EndRow;
+        // Write the probability matrix
+        writer << "number-of-traces" << "keys..." << csv::EndRow;
+        for (size_t stepIdx = 0; stepIdx != steps.size(); ++stepIdx) {
+            writer << steps[stepIdx];
+            for (size_t keyByteIdx = 0; keyByteIdx != m_Key.size(); ++keyByteIdx) {
+                for (size_t key = 0; key != 256; key++) {
+                    writer << keyProbabilities[stepIdx][keyByteIdx][key];
+                }
+            }
+            writer << csv::EndRow;
+        }
 
-        for (size_t step = 0; step != log_probabilities.size(); ++step)
-        {
-            auto& lpEntry = log_probabilities[step];
-            Matrix<uint32_t> histogram(m_BinCount, keyByteCount);
+        // Do some stuff with things that make more stuff togethers
+        METRISCA_INFO("Computing histogram in order to approximate the rank of the whole key within our model with {} bins", m_BinCount);
+        std::vector<std::vector<uint32_t>> histograms; // A list of all of the output histograms
+        std::vector<std::pair<double, double>> minMaxValues; // A list of min/max for each matrix
+        std::vector<uint64_t> totalCounts; // Sum over the histogram
 
-            // First compute the histograms
-            for (size_t keyByte = 0; keyByte != keyByteCount; ++keyByte) {
+        // Because the following code is executed in parallel we must ensure the container won't be resized during
+        // execution
+        histograms.resize(steps.size(), {}); 
+        minMaxValues.resize(steps.size(), std::make_pair(0.0, 0.0)); 
+        totalCounts.resize(steps.size(), 0);
+
+        metrisca::parallel_for("Aggregating histograms together", 0, steps.size(), [&](size_t stepIdx) {
+            const auto& log_probabilities = keyProbabilities[stepIdx];
+
+            // Find the minimum/maximum of each log_probabilities (non standard value are skipped)
+            double min = DOUBLE_INFINITY, max = -DOUBLE_INFINITY;
+
+            for (size_t keyByte = 0; keyByte != m_Key.size(); ++keyByte) {
+                for (size_t key = 0; key != 256; ++key) {
+                    double value = log_probabilities[keyByte][key];
+
+                    if (IS_VALID_DOUBLE(value)) {
+                        max = std::max(max, value);
+                        min = std::min(min, value);
+                    }
+                }
+            }
+
+            minMaxValues[stepIdx] = std::make_pair(min, max);
+
+            // Compute the histogram 
+            Matrix<uint32_t> histogram(m_BinCount, m_Key.size());
+            for (size_t keyByte = 0; keyByte != m_Key.size(); ++keyByte) {
                 histogram.FillRow(keyByte, 0);
 
                 for (size_t key = 0; key != 256; ++key) {
-                    double value = lpEntry.data(keyByte, key);
-                    size_t bin = numerics::FindBin(value, lpEntry.min, lpEntry.max, m_BinCount);
+                    // Retrieve the value corresponding to the current key-byte & key
+                    double value = log_probabilities[keyByte][key];
+
+                    // Skip invalid probabilities entry sample
+                    if (!IS_VALID_DOUBLE(value))
+                        continue;
+                    
+                    // Find corresponding bin within histogram and increment it
+                    size_t bin = numerics::FindBin(value, min, max, m_BinCount);
                     histogram(keyByte, bin) += 1;
                 }
             }
 
-            // Secondly perform keyByteCount convolution the retrieve the last sample
-            METRISCA_INFO("Performing {} convolution to comupte the overall rank", keyByteCount - 1);
+            // Compute the convolution between each sample
             auto first_row = histogram.GetRow(0);
-            std::vector<uint32_t> conv(first_row.begin(), first_row.end());
-            for (size_t i = 1; i < keyByteCount; ++i) {
+            std::vector<uint32_t> conv(first_row.begin(), first_row.end()); // So un-optimized that it make me sick (hard copy)
+            for (size_t i = 1; i < m_Key.size(); ++i) {
                 conv = numerics::Convolve<uint32_t>(nonstd::span<uint32_t>(conv.begin(), conv.end()), histogram.GetRow(i));
             }
 
-            for (size_t i = 0; i < conv.size(); i++) {
-                writer << conv[i];
+            // Iterate through the histogram
+            uint64_t count = 0;
+            for (uint32_t v : conv) {
+                count += v;
+            }
+            
+            // Finally add the last histogram to the output list
+            histograms[stepIdx] = std::move(conv);
+            totalCounts[stepIdx] = count;
+        });
+
+        // Dump the output histogram to the file
+        METRISCA_INFO("Writing histogram to the file");
+        writer << "number-of-traces" << "histograms..." << csv::EndRow;
+
+        for (size_t stepIdx = 0; stepIdx != steps.size(); ++stepIdx) {
+            writer << steps[stepIdx];
+
+            // Print every entry within histograms
+            for (uint32_t entry : histograms[stepIdx]) {
+                writer << entry;
             }
             writer << csv::EndRow;
-            
-            // Finally add the final histogram to the list
-            histograms.push_back(std::move(conv));
-        }
-        
-        // Compute and bound key rank of the real key
-        METRISCA_INFO("Computing key rank of the real key and bounding it");
-        writer << "lower_bound" << "upper_bound" << "rank" << csv::EndRow;
-        for (size_t step = 0; step != histograms.size(); ++step)
-        {
-            const auto& histogram = histograms[step];
-            const auto& lpEntry = log_probabilities[step];
+        } 
+        writer << csv::Flush;
+
+        // Computing key rank for each histograms
+        writer << "number-of-traces" << "lower_bound" << "upper_bound" << "rank" << "histogram-entry" << csv::EndRow;
+
+        METRISCA_INFO("Computing and bounding key-rank of the real key");
+        for (size_t stepIdx = 0; stepIdx != steps.size(); ++stepIdx) {
+            const auto& histogram = histograms[stepIdx];
+            const auto& entry = keyProbabilities[stepIdx];
+            auto [min, max] = minMaxValues[stepIdx];
 
             // Determine the bin in which the real key should be in theory
             double log_probability_correct_key = 0.0;
-            for (size_t keyByte = 0; keyByte != keyByteCount; ++keyByte) {
-                log_probability_correct_key += lpEntry.data(keyByte, m_Key[keyByte]);
+            for (size_t keyByte = 0; keyByte != m_Key.size(); ++keyByte) {
+                double increment = entry[keyByte][m_Key[keyByte]];
+
+                if (IS_VALID_DOUBLE(increment))
+                    log_probability_correct_key += increment;
+                else {
+                    METRISCA_WARN("The log_probability for byte {} and value {} (with {} traces) is not defined", keyByte, m_Key[keyByte], steps[stepIdx]);
+
+                    // In this scenario we cannot infer the given key byte, as such we can take the worst value possible
+                    log_probability_correct_key += min;
+                }
             }
 
             // Find the corresponding bin
-            size_t correct_key_bin = numerics::FindBin(log_probability_correct_key, lpEntry.min, lpEntry.max, m_BinCount);
+            size_t correct_key_bin = numerics::FindBin(log_probability_correct_key, min * m_Key.size(), max * m_Key.size(), histogram.size());
 
             // Compute the overall key rank (and bounds the bin quantization error) using the histogram
             size_t lower_bound = 0;
             size_t upper_bound = 0;
             size_t rank = 0;
 
-            for(size_t i = correct_key_bin + keyByteCount; i < m_BinCount; i++) {
+            for(size_t i = correct_key_bin + m_Key.size(); i < histogram.size(); i++) {
                 lower_bound += histogram[i];
             }
 
-            for (size_t i = correct_key_bin; i < correct_key_bin + keyByteCount; i++) {
+            for (size_t i = correct_key_bin; i < correct_key_bin + m_Key.size() && i < histogram.size(); i++) {
                 rank += histogram[i];
             }
 
-            for(size_t i = (correct_key_bin < keyByteCount) ? 0 : correct_key_bin - keyByteCount; i < correct_key_bin; i++) {
+            for(size_t i = ((correct_key_bin < m_Key.size()) ? 0 : (correct_key_bin - m_Key.size())); i < correct_key_bin && i < histogram.size(); i++) {
                 upper_bound += histogram[i];
             }
             
@@ -277,15 +271,229 @@ namespace metrisca {
             upper_bound += rank;
 
             // Output these values to the file
-            writer << lower_bound << upper_bound << rank << csv::EndRow;
-        } 
+            writer << steps[stepIdx] << lower_bound << upper_bound << rank << totalCounts[stepIdx] << csv::EndRow;
+        }
 
-
-        // Print information to the screen
-        METRISCA_TRACE("LazyErf cache efficiency (miss-rate): {}", lazy_normal_cdf.missRate());
-        
         // Return success of the operatrion
         return {};
+    }
+
+    Result<std::array<double, 256>, Error> RankEstimationMetric::ComputeProbabilities(size_t number_of_traces, size_t keyByteIdx)
+    {
+        // Result of all of this shenanigans
+        std::array<double, 256> probabilities;
+        probabilities.fill(-DOUBLE_INFINITY);
+
+        // Utility variables
+        const size_t number_of_samples = m_SampleCount;
+        const size_t first_sample = m_SampleStart;
+        const size_t last_sample = first_sample + m_SampleCount;
+
+        // Compute the modelization matrix for the current byte
+        //TODO: Move this to the parent function in order to prevent it from
+        //      being recomputed at every single step.// For each group/step compute the covariance matrix between each sample
+        Matrix<int32_t> models;
+        {
+            std::lock_guard<std::mutex> guard(m_GlobalLock);
+            m_Distinguisher->GetPowerModel()->SetByteIndex(keyByteIdx);
+            auto result = m_Distinguisher->GetPowerModel()->Model();
+            if (result.IsError()) {
+                METRISCA_ERROR("Fail to compute the model for KeyByte {}", keyByteIdx);
+                return result.Error();
+            }
+            models = result.Value();
+        }
+
+
+        // Using our prior knowledge of the correct key, group each 
+        // traces by their "expected" output using the model.
+        std::array<std::vector<size_t>, 256> grouped_by_expected_result; // Only store indices of the traces (to save memory)
+        std::unordered_set<size_t> group_without_model;
+
+        for (size_t i = 0; i != number_of_traces; ++i) {
+            int32_t expected_output = models(m_Key[keyByteIdx], i);
+
+            if (expected_output < 0 || expected_output >= 256) {
+                METRISCA_ERROR("Currently only model producing byte (in range 0 .. 255) are supported by this metric. Instead got {}", expected_output);
+                return Error::UNSUPPORTED_OPERATION;
+            }
+
+            grouped_by_expected_result[expected_output].push_back(i);
+        }
+
+        for (size_t groupIdx = 0; groupIdx != 256; groupIdx++) {
+            if (grouped_by_expected_result[groupIdx].empty()) {
+                group_without_model.insert(groupIdx);
+            }
+        }
+
+        // Log a warning if there is group without model
+        if (!group_without_model.empty()) {
+            METRISCA_WARN("There are {} group without model for byte {} with {} traces",
+                          group_without_model.size(),
+                          keyByteIdx,
+                          number_of_traces);
+        }
+
+        // For each group, for each sample, computes the average within the group
+        std::array<std::vector<double>, 256> group_average; // [expected result = 256][sample]
+
+        for (size_t groupIdx = 0, iter = 0; groupIdx != 256; ++groupIdx) { // For each of the possible output
+            group_average[groupIdx].resize(number_of_samples, 0.0);
+            size_t matching_trace_count = 0;
+
+            for (size_t traceIdx : grouped_by_expected_result[groupIdx]) {
+                // Ignore all traces outside of the sweet zone
+                if (traceIdx >= number_of_traces) continue;
+                matching_trace_count += 1;
+
+                // Computing the average for this specific group
+                for (size_t sampleIdx = first_sample; sampleIdx != last_sample; sampleIdx++) {
+                    group_average[groupIdx][sampleIdx - first_sample] += m_Dataset->GetSample(sampleIdx)[traceIdx];
+                }
+            }
+
+            // If no such traces exists
+            if (matching_trace_count == 0) {
+                for (size_t j = 0; j < number_of_samples; j++) {
+                    group_average[groupIdx][j] = DOUBLE_NAN;
+                }
+            }
+            else {
+                for (size_t j = 0; j < number_of_samples; j++) {
+                    group_average[groupIdx][j] /= matching_trace_count;  
+                }
+            }
+        }
+
+        // Reducing number of samples to speed-up the computation
+        std::vector<size_t> selected_sample;
+        std::vector<double> best_diff_per_sample;
+        best_diff_per_sample.resize(last_sample - first_sample, 0.0);
+
+        for (size_t i = 0; i != 256; i++) {
+            // Skip group without model
+            if (group_without_model.find(i) != group_without_model.end()) continue;
+
+            for (size_t j = i + 1; j != 256; ++j) {
+                if (group_without_model.find(j) != group_without_model.end()) continue;
+
+                // Iterate over all available sample
+                for (size_t k = first_sample; k != last_sample; ++k) {
+                    double diff = (group_average[i][k - first_sample] - group_average[j][k - first_sample]) * 
+                                  (group_average[i][k - first_sample] - group_average[j][k - first_sample]);
+                    if (best_diff_per_sample[k - first_sample] < diff) {
+                        best_diff_per_sample[k - first_sample] = diff;
+                    }
+                }
+            }
+        }
+
+        // Because of numerical stability issues and optimization problems
+        // we do not compute the covariance on all samples, only on the most
+        // useful ones. To achieve this goal we will sort all sample by there best
+        // diff, and select m_SampleFilterCount of the best sample
+        {
+            std::vector<size_t> ordered_diffs;
+            ordered_diffs.reserve(best_diff_per_sample.size());
+            for (size_t i = 0; i != best_diff_per_sample.size(); ++i) {
+                ordered_diffs.push_back(i);
+            }
+
+            std::sort(ordered_diffs.begin(), ordered_diffs.end(), [&](size_t x, size_t y) {
+                return best_diff_per_sample[x] < best_diff_per_sample[y];
+            });
+
+            // Keep best m_SampleFilterCount best sample
+            for (size_t i = 0; i != ordered_diffs.size(); ++i) {
+                if (i >= m_SampleFilterCount) break;
+                selected_sample.push_back(ordered_diffs[i]);
+            }
+        }
+
+        size_t const reduced_sample_number = selected_sample.size();
+        METRISCA_TRACE("The number of POI is: {} for byte {}, with {} traces", reduced_sample_number, keyByteIdx, number_of_traces);
+
+        // Compute the covariance matrix
+        Matrix<double> cov_matrix(reduced_sample_number, reduced_sample_number);
+        std::vector<double> avg;
+        avg.resize(reduced_sample_number, 0.0);
+
+        for (size_t i = 0; i != reduced_sample_number; i++) {
+            avg[i] = 0.0;
+            for (size_t j = 0; j != number_of_traces; ++j) {
+                avg[i] += m_Dataset->GetSample(selected_sample[i])[j];
+            }
+            avg[i] /= number_of_traces;
+        }
+        
+
+        for (size_t i = 0; i != reduced_sample_number; ++i) {
+            cov_matrix.FillRow(i, 0.0);
+        }
+
+        for (size_t groupIdx = 0; groupIdx != 256; ++groupIdx)
+        {
+            for (size_t traceIdx : grouped_by_expected_result[groupIdx]) {
+                for (size_t row = 0; row != reduced_sample_number; row++) {
+                    for (size_t col = 0; col != reduced_sample_number; col++) {
+                        cov_matrix(row, col) += (m_Dataset->GetSample(selected_sample[row])[traceIdx] - group_average[groupIdx][selected_sample[row] - first_sample]) *
+                                                (m_Dataset->GetSample(selected_sample[col])[traceIdx] - group_average[groupIdx][selected_sample[col] - first_sample]);
+                    }
+                }
+            }
+        }
+
+        for (size_t row = 0; row != reduced_sample_number; row++) {
+            for (size_t col = 0; col != reduced_sample_number; col++) {
+                cov_matrix(row, col) /= (number_of_traces - 1);
+            }
+        }
+
+        Matrix<double> cov_inverse_matrix = cov_matrix.CholeskyInverse();
+
+        // Finally compute the probabilities
+        std::vector<double> noise_vector, intermediary_result; // number of samples
+        noise_vector.resize(reduced_sample_number);
+        intermediary_result.resize(reduced_sample_number);
+
+        for (size_t groupIdx = 0; groupIdx != 256; groupIdx++)
+        {
+            if (group_without_model.find(groupIdx) != group_without_model.end()) continue;
+            probabilities[groupIdx] = 0.0;
+
+            for (size_t traceIdx = 0; traceIdx != number_of_traces; ++traceIdx)
+            {
+                int32_t expected_output = models(groupIdx, traceIdx);
+                if (group_without_model.find(expected_output) != group_without_model.end()) continue;
+
+                for (size_t j = 0; j != reduced_sample_number; ++j)
+                {
+                    noise_vector[j] = m_Dataset->GetSample(selected_sample[j])[traceIdx] - group_average[expected_output][selected_sample[j] - first_sample];
+                }
+
+                // Compute noise transposed * inverse
+                for (size_t i = 0; i < reduced_sample_number; i++) {
+                    double sum = 0.0;
+                    for (size_t j = 0; j < reduced_sample_number; j++) {
+                        sum += noise_vector[j] * cov_inverse_matrix(j, i); // inverse of covariace matrix (symmetric) is also symmetric so the order doesn't matter
+                    }
+                    intermediary_result[i] = sum;
+                }
+
+                // compute intermediary_result * noise
+                double final_result = 0;
+                for (size_t i = 0; i < reduced_sample_number; i++) {
+                    final_result += intermediary_result[i] * noise_vector[i];
+                }
+
+                // finally update the probability
+                probabilities[groupIdx] += -0.5 * final_result;
+            }
+        }
+
+        // Upon the success of the current function, return the underlying probabilities
+        return probabilities;
     }
 
 }
