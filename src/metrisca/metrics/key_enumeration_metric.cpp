@@ -242,7 +242,7 @@ namespace metrisca {
             return Error::MISSING_ARGUMENT;
 
         m_Dataset = dataset.value();
-        m_TrainingDataset = dataset.value();
+        m_TrainingDataset = training_dataset.value();
 
         // Ensures the actual dataset has fixed key
         if (m_Dataset->GetHeader().KeyMode != KeyGenerationMode::FIXED) {
