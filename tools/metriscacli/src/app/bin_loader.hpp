@@ -15,13 +15,14 @@
 #include <filesystem>
 #include <string>
 #include <vector>
-#include <filesystem>
 
 
-namespace fs = std::filesystem;
 
 namespace metrisca
 {
+    namespace fs = std::filesystem;
+    
+    
     template<size_t TraceCount, size_t SampleCount>
     class BinLoader : public LoaderPlugin {
     public:

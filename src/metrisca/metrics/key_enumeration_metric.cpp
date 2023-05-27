@@ -183,7 +183,15 @@ static LazyGeneratorFn asLazyGenerator(const std::array<double, 256>& elements)
 
     // Sort the reorderBuffer so that the corresponding score is in descending order
     std::sort(context->reorderBuffer.begin(), context->reorderBuffer.end(), [&](size_t lhs, size_t rhs) {
-        return elements[lhs] > elements[rhs];
+        if (std::isnan(elements[lhs])) {
+            return false;
+        }
+        else if (std::isnan(elements[rhs])) {
+            return true;
+        }
+        else {
+            return elements[lhs] > elements[rhs];
+        }
     });
 
     return [elements, context](std::vector<EnumeratedElement>& output, size_t N) -> bool {
@@ -195,6 +203,11 @@ static LazyGeneratorFn asLazyGenerator(const std::array<double, 256>& elements)
             }
 
             size_t key = context->reorderBuffer[cIdx++];
+            if (std::isnan(elements[key])) { // Ensure no `nan` value get past this stage
+                cIdx = 256;
+                return true;
+            }
+
             output.emplace_back(elements[key], PartialKey({ (char) key }));
         }
 
@@ -449,6 +462,11 @@ namespace metrisca {
 
             // Enumerate the required amount of first key
             for (size_t i = 0; i < m_OutputEnumeratedKeyCount; ++i) {
+                if (i >= outputPerSteps[stepIdx].size()) {
+                    METRISCA_WARN("Due to `nan` being in the resulting score matrix, the number of enumerated key is smaller than the expected one");
+                    break;
+                }
+
                 const auto& element = outputPerSteps[stepIdx][i];
                 std::ostringstream ss;
 
@@ -495,6 +513,10 @@ namespace metrisca {
                 vSquared /= traceCount;
 
                 error_vector[sampleIdx] = v / std::sqrt(vSquared - v * v);
+
+                if (std::isnan(error_vector[sampleIdx])) {
+                    error_vector[sampleIdx] = 0.0; // Ignore the sample
+                }
             }
 
             // Finally compute dot product between the error_vector and the temp_vector
