@@ -17,8 +17,6 @@
 namespace metrisca {
 
     class KeyEnumerationMetric : public MetricPlugin {
-        typedef std::vector<std::vector<std::array<double, 256>>> ProfileOutput;
-
     public:
 
         virtual Result<void, Error> Init(const ArgumentList& args) override;
@@ -26,8 +24,6 @@ namespace metrisca {
         virtual Result<void, Error> Compute() override;
 
     private:
-        Result<std::array<double, 256>, Error> ComputeScores(const ProfileOutput& profileOutput, size_t traceCount, size_t keyByteIdx, const std::vector<Matrix<int32_t>>& models);
-        Result<ProfileOutput, Error> ProfileStage();
 
         std::vector<uint8_t> m_Key{}; /*<! Key of the actual dataset (not the training one) */
         uint32_t m_EnumeratedKeyCount; /*<! Number of key being enumerated by the algorithm */
@@ -42,6 +38,7 @@ namespace metrisca {
         uint32_t m_SampleEnd;
         uint32_t m_TraceCount;
         uint32_t m_TraceStep;
+        uint32_t m_SampleFilterCount{};
     };
 
 }

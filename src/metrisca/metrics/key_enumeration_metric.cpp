@@ -20,6 +20,7 @@
 #include "metrisca/core/arg_list.hpp"
 #include "metrisca/core/parallel.hpp"
 #include "metrisca/core/lazy_function.hpp"
+#include "metrisca/utils/template_attack.hpp"
 
 #include <limits>
 #include <atomic>
@@ -318,7 +319,15 @@ namespace metrisca {
 
         if (m_OutputEnumeratedKeyCount > m_EnumeratedKeyCount) {
             METRISCA_ERROR("Cannot output more keys than the total number of key enumerated");
-            return Error::UNSUPPORTED_OPERATION;
+            return Error::INVALID_ARGUMENT;
+        }
+
+        // Retrieve number of POI
+        m_SampleFilterCount = args.GetUInt32(ARG_NUMBER_SAMPLE_FILTER).value_or(m_SampleEnd - m_SampleStart);
+
+        if (m_SampleFilterCount > m_SampleEnd - m_SampleStart) {
+            METRISCA_ERROR("Cannot select number of poi higher than number of samples");
+            return Error::INVALID_ARGUMENT;
         }
 
         // Retrieve the key from the dataset
@@ -328,7 +337,7 @@ namespace metrisca {
         // Maximum key size
         if (m_Key.size() > 256) {
             METRISCA_ERROR("Maximum key size reached, risk of stack overflow");
-            return Error::UNSUPPORTED_OPERATION;
+            return Error::INVALID_ARGUMENT;
         }
 
         // Finally return the success of the initialization of the current plugin
@@ -342,65 +351,25 @@ namespace metrisca {
             numerics::ARange(m_TraceStep, m_TraceCount + 1, m_TraceStep) :
             std::vector<uint32_t>{ m_TraceCount };
 
-        // Open output csv file
-        CSVWriter writer(m_OutputFile);
-
-        // Profiling stage
-        METRISCA_INFO("Profiling stage");
-        auto profileResult = ProfileStage();
-
-        if (profileResult.IsError()) return profileResult.Error();
-        ProfileOutput profileOutput = profileResult.Value();
-
-        // Modelize expected result for each entry
-        METRISCA_INFO("Modelize the testing dataset using the provided modelling function");
-        std::vector<Matrix<int32_t>> models(m_Key.size());
-        m_Model->SetDataset(m_Dataset);
-        for (size_t byteIdx = 0; byteIdx != m_Key.size(); ++byteIdx) {
-            m_Model->SetByteIndex(byteIdx);
-            
-            auto model = m_Model->Model();
-            if (model.IsError()) {
-                return model.Error();
-            }
-
-            models[byteIdx] = std::move(model.Value());
-        }
- 
         // First compute the score for each key for each key byte
         METRISCA_INFO("Computing score(s) for each key and key byte");
-        std::vector<std::vector<std::array<double, 256>>> scores; // [step][byte][byteValue]
-
-        // Required in order to ensure that the vector won't be reallocated during parrallel execution of the program
-        scores.resize(steps.size());
-        for (size_t i = 0; i != steps.size(); ++i) {
-            scores[i].resize(m_Key.size());
+        auto resultTemplateAttack = metrisca::runTemplateAttack(m_TrainingDataset,
+                                    m_Dataset,
+                                    m_Model,
+                                    m_TraceCount,
+                                    m_TraceStep,
+                                    m_SampleStart,
+                                    m_SampleEnd,
+                                    m_SampleFilterCount);
+        if (resultTemplateAttack.IsError()) {
+            return resultTemplateAttack.Error();
         }
+        TemplateAttackResult scores = resultTemplateAttack.Value();
 
-        std::atomic_bool isError = false;
-        Error error;
-
-        metrisca::parallel_for("Computing scores", 0, steps.size() * m_Key.size(), [&](size_t idx) {
-            if (isError) return; 
-
-            size_t keyByteIdx = idx % m_Key.size();
-            size_t stepIdx = idx / m_Key.size();
-
-            auto result = ComputeScores(profileOutput, steps[stepIdx], keyByteIdx, models);
-            if (result.IsError()) {
-                METRISCA_ERROR("Fail to compute scores with {} traces (key-byte {})", steps[stepIdx], keyByteIdx);
-                isError = true;
-                error = result.Error();
-                return;
-            }
-            scores[stepIdx][keyByteIdx] = result.Value();
-        });
-        
-        if (isError) {
-            return error;
-        }
-
-        // Dump the score to the output file
+        // Openning output csv file and dump the score to the 
+        // output file
+        CSVWriter writer(m_OutputFile);
+ 
         METRISCA_INFO("Writing scores to the output csv file");
         writer << "trace-count" << "keyByte" << "scores..." << csv::EndRow;
         for (size_t stepIdx = 0; stepIdx != steps.size(); stepIdx++) {
@@ -412,8 +381,10 @@ namespace metrisca {
                 writer << csv::EndRow;
             }
         }
+        writer << csv::Flush;
 
-        // Secondly for each step, enumerate all possible keys
+        // Perform the key enumeration part using the score
+        METRISCA_INFO("Performing key enumeration phase, enumerating up to {} keys", m_EnumeratedKeyCount);
         std::vector<std::vector<EnumeratedElement>> outputPerSteps;
         outputPerSteps.resize(steps.size());
 
@@ -481,150 +452,9 @@ namespace metrisca {
             writer << csv::EndRow;
         }
 
+        // Finally return the success of the computation
+        METRISCA_INFO("Key enumeration phase completed successfully");
         return {};
     }
 
-    Result<std::array<double, 256>, Error> KeyEnumerationMetric::ComputeScores(const ProfileOutput& profileOutput, size_t traceCount, size_t keyByteIdx, const std::vector<Matrix<int32_t>>& models)
-    {
-        size_t const sampleCount = m_SampleEnd - m_SampleStart;
-        std::array<double, 256> scores;
-        scores.fill(0.0);
-
-        // Finally compute the score under each key hypothesis
-        std::vector<double> error_vector(sampleCount, 0.0);
-        std::vector<double> temp_vector(sampleCount, 0.0);
-
-        for (size_t key = 0; key != 256; key++)
-        {
-            // Compute the error vecotr
-            for (size_t sampleIdx = 0; sampleIdx != sampleCount; ++sampleIdx) {
-                double v = 0.0;
-                double vSquared = 0.0;
-                auto sample = m_Dataset->GetSample(sampleIdx + m_SampleStart);
-
-                for (size_t traceIdx = 0; traceIdx != traceCount; ++traceIdx) {
-                    uint8_t expected_output = (uint8_t) (uint32_t) models[keyByteIdx](key, traceIdx);
-                    double value = ((double) sample[traceIdx]) - ((double) profileOutput[keyByteIdx][sampleIdx][expected_output]);
-                    v += value;
-                    vSquared += value * value;
-                }
-
-                v /= traceCount;
-                vSquared /= traceCount;
-
-                error_vector[sampleIdx] = v / std::sqrt(vSquared - v * v);
-
-                if (std::isnan(error_vector[sampleIdx])) {
-                    error_vector[sampleIdx] = 0.0; // Ignore the sample
-                }
-            }
-
-            // Finally compute dot product between the error_vector and the temp_vector
-            double score = 0.0;
-            for (size_t i = 0; i != sampleCount; ++i) {
-                score += error_vector[i] * error_vector[i];
-            }
-            scores[key] = -std::log2(1e-9 + score); // score >= 0
-        }
-
-        return scores;
-    }
-
-    Result<KeyEnumerationMetric::ProfileOutput, Error> KeyEnumerationMetric::ProfileStage()
-    {
-        std::vector<std::vector<std::array<double, 256>>> result;
-        result.resize(m_Key.size());
-        for (size_t i = 0; i != result.size(); ++i) {
-            result[i].resize(m_SampleEnd - m_SampleStart);
-        }
-
-        std::mutex glock;
-        m_Model->SetDataset(m_TrainingDataset);
-        
-        std::atomic_bool isError = false;
-        Error error;
-
-        // Computing profile output
-        metrisca::parallel_for("Profiling for each key byte ", 0, result.size(), [&](size_t byteIdx)
-        {
-            // If any error
-            if (isError) return;
-
-            // Modelize the trace dataset
-            metrisca::Matrix<int32_t> model;
-
-            {
-                std::lock_guard<std::mutex> guard(glock);
-                m_Model->SetByteIndex(byteIdx);
-                auto model_result = m_Model->Model();
-                if (model_result.IsError()) {
-                    if (!isError.exchange(true)) {
-                        error = model_result.Error();
-                    }
-                    return;
-                }
-                model = model_result.Value();
-            }
-
-            // Group every traces by expected output
-            std::array<std::vector<size_t>, 256> traceIdxByExpectedOutput;
-
-            for (size_t i = 0; i != m_TrainingDataset->GetHeader().NumberOfTraces; ++i) {
-                uint32_t expectedOutput = (uint32_t) model(m_TrainingDataset->GetKey(i)[byteIdx], i);
-                
-                if (expectedOutput >= 256) {
-                    if (!isError.exchange(true)) {
-                        METRISCA_INFO("Currently this metric does not support exepected result not in [0, 255]");
-                        error = Error::UNSUPPORTED_OPERATION;
-                    }
-                    return;
-                }
-
-                traceIdxByExpectedOutput[expectedOutput].push_back(i);
-            }
-
-            // Compute per-group average for each sample, this is our "prior" knowledge
-            for (size_t expectedOutput = 0; expectedOutput != 256; expectedOutput++) {
-                for (size_t sIdx = m_SampleStart; sIdx != m_SampleEnd; sIdx++) {
-
-                    double value = 0.0;
-                    size_t N = 0;
-                    for (size_t i : traceIdxByExpectedOutput[expectedOutput]) {
-                        N++;
-                        value += m_TrainingDataset->GetSample(sIdx)[i];
-                    }
-
-                    if (N > 0) {
-                        result[byteIdx][sIdx - m_SampleStart][expectedOutput] = value / N;
-                    }
-                    else {
-                        result[byteIdx][sIdx - m_SampleStart][expectedOutput] = DOUBLE_NAN;
-                    }
-                }
-            }
-        });
-
-        // Compute the total average
-        METRISCA_INFO("Computing total average");
-        auto mean_sample = m_TrainingDataset->GetMeanSample();
-        double average = 0.0;
-        for (size_t sIdx = m_SampleStart; sIdx != m_SampleEnd; sIdx++) {
-            average += mean_sample[sIdx];
-        }
-        average /= (m_SampleEnd - m_SampleStart);
-
-        // Replace all values by total average
-        for (size_t keyByte = 0; keyByte != m_Key.size(); ++keyByte) {
-            for (size_t sIdx = m_SampleStart; sIdx != m_SampleEnd; sIdx++) {
-                for (size_t key = 0; key != 256; key++) {
-                    double& value = result[keyByte][sIdx - m_SampleStart][key];
-                    if (std::isnan(value)) {
-                        value = average;
-                    }
-                }
-            }
-        }
-
-        return result;
-    }
 }

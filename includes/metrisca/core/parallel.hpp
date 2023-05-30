@@ -8,6 +8,7 @@
 
 #include "metrisca/core/assert.hpp"
 #include "metrisca/core/indicators.hpp"
+#include "metrisca/core/logger.hpp"
 
 #include <stdexcept>
 #include <functional>
