@@ -16,8 +16,10 @@ using namespace metrisca;
 
 struct ProfileResult {
     std::vector<std::array<double, 256>> means;
-    std::vector<size_t> selectedSample;
+    Matrix<double> inverseCovariancesMatrices;    
+    std::vector<size_t> selectedSample; // for each byte, a list of all selected points-of-interest
 };
+
 
 static Result<std::tuple<ProfileResult, LinearCorrectionFactor>, Error> profile(
     std::shared_ptr<TraceDataset> profilingDataset, 
@@ -29,13 +31,14 @@ static Result<std::tuple<ProfileResult, LinearCorrectionFactor>, Error> profile(
     // Conveniance variable
     size_t numberOfTraces = profilingDataset->GetHeader().NumberOfTraces;
     size_t numberOfBytes = profilingDataset->GetKey(0).size();
+    size_t numberOfSamples = sampleEnd - sampleStart;
 
     // Use the profiling dataset to compute the mean
     powerModel->SetDataset(profilingDataset);
 
     // Allocate the result of the operation (for each byte and each samples)
     ProfileResult result; 
-    result.means.resize(sampleEnd - sampleStart);
+    result.means.resize(numberOfSamples);
     for (auto& x : result.means) x.fill(0.0);
 
     result.selectedSample.reserve(sampleFilterCount);
@@ -49,6 +52,7 @@ static Result<std::tuple<ProfileResult, LinearCorrectionFactor>, Error> profile(
     std::vector<Matrix<int32_t>> modelsPerByte;
     modelsPerByte.resize(numberOfBytes);
     std::atomic<double> uiSum = 0.0, viSum = 0.0, ui2Sum = 0.0, vi2Sum = 0.0, uiviSum = 0.0;
+    METRISCA_INFO("Determining the linear correction factor");
 
     metrisca::parallel_for(0, numberOfBytes, [&](size_t byteIdx)
     {
@@ -104,10 +108,11 @@ static Result<std::tuple<ProfileResult, LinearCorrectionFactor>, Error> profile(
 
     // Compute the correction factor
     LinearCorrectionFactor linearCorrectionFactor;
-    double N = (double) (numberOfBytes * (sampleEnd - sampleStart) * numberOfTraces);
+    double N = (double) (numberOfBytes * (numberOfSamples) * numberOfTraces);
     linearCorrectionFactor.alpha = (N * uiviSum - viSum) / (N * ui2Sum - uiSum * uiSum);
     linearCorrectionFactor.beta = (viSum - linearCorrectionFactor.alpha * uiSum) / N;
     std::atomic_bool uniqueWarning = false;
+    METRISCA_INFO("Linear correction factor: alpha = {}, beta = {}", linearCorrectionFactor.alpha, linearCorrectionFactor.beta);
 
     // Begin the second phase of the profiling
     METRISCA_INFO("Begin of the profiling phase");
@@ -162,7 +167,7 @@ static Result<std::tuple<ProfileResult, LinearCorrectionFactor>, Error> profile(
 
         // For each group, and each sample, compute the mean
         std::vector<std::array<double, 256>> groupAverage;
-        groupAverage.resize(sampleEnd - sampleStart);
+        groupAverage.resize(numberOfSamples);
 
         for (size_t sampleIdx = sampleStart; sampleIdx != sampleEnd; ++sampleIdx) {
             for (size_t groupIdx = 0; groupIdx != 256; groupIdx++) {
@@ -186,7 +191,7 @@ static Result<std::tuple<ProfileResult, LinearCorrectionFactor>, Error> profile(
             std::lock_guard<std::mutex> lock(globalLock);
 
             // Increment the scores of the result with the group average
-            for (size_t sampleIdx = 0; sampleIdx != sampleEnd - sampleStart; ++sampleIdx) {
+            for (size_t sampleIdx = 0; sampleIdx != numberOfSamples; ++sampleIdx) {
                 for (size_t groupIdx = 0; groupIdx != 256; ++groupIdx) {
                     result.means[sampleIdx][groupIdx] += groupAverage[sampleIdx][groupIdx] / numberOfBytes;
                 }
@@ -194,52 +199,114 @@ static Result<std::tuple<ProfileResult, LinearCorrectionFactor>, Error> profile(
         }
     });
 
-    // Because of numerical stability issues and optimization problems
-    // we do not compute the covariance on all samples, only on the most
-    // useful ones. To achieve this goal we will sort all sample by there best
-    // diff, and select sampleFilterCount of the best samples
+    // It should be noted that the matrix of covariance is ill-conditioned,
+    // this is explained by the fact that the some samples may be closly
+    // correlated with each other. To avoid this problem we first compute
+    // the covariance matrix for each samples, and then only keep the most
+    // useful ones. 
+    Matrix<double> covarianceMatrix(numberOfSamples, numberOfSamples);
 
-    // Determine which sample is the most benefic to have
-    std::vector<double> bestDiffs;
-    bestDiffs.resize(sampleEnd - sampleStart, 0.0);
+    // Compute the global covariance matrix
+    indicators::BlockProgressBar progress_bar{
+        indicators::option::BarWidth(60),
+        indicators::option::PrefixText("Computing covariance matrix"),
+        indicators::option::MaxProgress((numberOfSamples * (numberOfSamples + 1)) / 2),
+        indicators::option::Start{"["},
+        indicators::option::End{"]"},
+        indicators::option::ShowElapsedTime{ true },
+        indicators::option::ShowRemainingTime{ true }
+    };  
+    std::atomic_int32_t progress = 0;
 
-    for(size_t sampleIdx = 0; sampleIdx != sampleEnd - sampleStart; ++sampleIdx) {
-        for (size_t i = 0; i != 256; ++i) {
-            for (size_t j = 0; j != 256; ++j) {
-                if (std::isnan(result.means[sampleIdx][i]) || std::isnan(result.means[sampleIdx][j]))
-                    continue;
+    metrisca::parallel_for(0, (numberOfSamples * (numberOfSamples + 1)) / 2, [&](size_t start, size_t end, bool mainThread) {
+        for (size_t idx = start; idx != end; idx++) {
+            progress++;
+            if (mainThread) {
+                progress_bar.set_progress((float) progress);
+            }
+
+            size_t row = (size_t) ((std::sqrt(1.0 + 8.0 * idx) - 1.0) / 2.0);
+            size_t col = idx - (row * (row + 1)) / 2;
+            // size_t row = idx / numberOfSamples; 
+            // size_t col = idx % numberOfSamples;
+
+            double covariance = 0.0;
+            double a = 0.0, b = 0.0; 
+            size_t N = 1;
+
+            for (size_t byteIdx = 0; byteIdx != numberOfBytes; ++byteIdx) {
+                for (size_t traceIdx = 0; traceIdx != numberOfTraces; ++traceIdx) {
+                    uint32_t expectedResult = modelsPerByte[byteIdx](profilingDataset->GetKey(traceIdx)[byteIdx], traceIdx);
+
+                    double u = (linearCorrectionFactor(profilingDataset->GetSample(row)[traceIdx]) - result.means[row - sampleStart][expectedResult]);
+                    double v = (linearCorrectionFactor(profilingDataset->GetSample(col)[traceIdx]) - result.means[col - sampleStart][expectedResult]);
                     
-                double diff = std::abs(result.means[sampleIdx][i] - result.means[sampleIdx][j]);
+                    double acc = u * v;
 
-                if (diff > bestDiffs[sampleIdx]) {
-                    bestDiffs[sampleIdx] = diff;
+                    if (!std::isnan(acc)) {
+                        covariance += acc;
+                        a += u;
+                        b += v;
+                        N++;
+                    }
                 }
             }
+
+            covarianceMatrix(row, col) = (covariance / N) - ((a / N) * (b / N));
+        }
+    });
+
+    progress_bar.mark_as_completed();
+
+    // Complete the covariance matrix (copy the lower triangular part to the upper triangular part)
+    for (size_t row = 0; row != numberOfSamples; ++row) {
+        for (size_t col = row; col != numberOfSamples; ++col) {
+            METRISCA_ASSERT(row < col);
+            covarianceMatrix(row, col) = covarianceMatrix(col, row);
         }
     }
+    
+    // Select the most useful samples
+    // See https://en.wikipedia.org/wiki/Partial_correlation for further details
+    // Note: currently our way to select samples is kinda dumb
 
-    // Find the best sample
-    {
-        std::vector<size_t> reorderBuffer;
-        reorderBuffer.reserve(sampleEnd - sampleStart);
-        for (size_t i = 0; i != sampleEnd - sampleStart; ++i) {
-            reorderBuffer.push_back(i);
-        }
+    std::vector<size_t> selectedSample;
+    selectedSample.reserve(sampleFilterCount);
 
-        std::sort(reorderBuffer.begin(), reorderBuffer.end(), [&](size_t lhs, size_t rhs) {
-            if (std::isnan(lhs)) return false;
-            else if (std::isnan(rhs)) return true;
-            return bestDiffs[lhs] > bestDiffs[rhs];
-        });
+    while (selectedSample.size() < sampleFilterCount) {
+        // Find the sample with the highest variance given all the currently selected samples
+        size_t bestSample = std::numeric_limits<size_t>::max();
+        double bestVariance = 0.0;
 
-        // Keep best sampleFilterCount samples
-        for (size_t i = 0; i != sampleFilterCount; ++i) {
-            if (i >= reorderBuffer.size()) {
-                break;
+        for (size_t i = 0; i != numberOfSamples; ++i) {
+            double variance = covarianceMatrix(i, i);
+
+            for (size_t sample : selectedSample) {
+                variance -= covarianceMatrix(i, sample);
             }
-            result.selectedSample.push_back(reorderBuffer[i]);
+
+            if (variance > bestVariance) {
+                bestVariance = variance;
+                bestSample = i;
+            }
+        }
+
+        if (bestVariance <= 1e-3) break;
+        selectedSample.push_back(bestSample);
+    }
+
+    // Find the sample with the highest variance
+    Matrix<double> reducedCovarianceMatrix(selectedSample.size(), selectedSample.size());
+    for (size_t row = 0; row != selectedSample.size(); ++row) {
+        for (size_t col = 0; col != selectedSample.size(); ++col) {
+            reducedCovarianceMatrix(row, col) = covarianceMatrix(selectedSample[row], selectedSample[col]);
         }
     }
+
+    // Compute the inverse of the covariance matrix
+    result.selectedSample = std::move(selectedSample);
+    result.inverseCovariancesMatrices = reducedCovarianceMatrix.CholeskyInverse();
+
 
     // Finally return the result of the profiling operation
     if (isError) {
@@ -354,55 +421,13 @@ namespace metrisca
                     noise.push_back(sampleNoise / steps[stepIdx]);
                 }
 
-                // Compute the covariance matrix (the upper triangular part is enough)
-                Matrix<double> covarianceMatrix(noise.size(), noise.size());
-
-                for (size_t row = 0; row != noise.size(); row++) {
-                    for (size_t col = row; col != noise.size(); ++col) {
-                        double covariance = 0.0;
-                        double a = 0.0, b = 0.0;
-                        size_t N = 1;
-                        for (size_t traceIdx = 0; traceIdx != steps[stepIdx]; ++traceIdx) {
-                            uint32_t expectedResult = models(key, traceIdx);
-
-                            double u = (linearCorrectionFactor(attackDataset->GetSample(profiledResult.selectedSample[row])[traceIdx]) - profiledResult.means[profiledResult.selectedSample[row] - sampleStart][expectedResult]);
-                            double v = (linearCorrectionFactor(attackDataset->GetSample(profiledResult.selectedSample[col])[traceIdx]) - profiledResult.means[profiledResult.selectedSample[col] - sampleStart][expectedResult]);
-                            
-                            double acc = u * v;
-
-                            if (!std::isnan(acc)) {
-                                covariance += acc;
-                                a += u;
-                                b += v;
-                                N++;
-                            }
-                        }
-
-                        covarianceMatrix(row, col) = (covariance / N) - ((a / N) * (b / N));
-                    }
-                }
-
-                // Complete the covariance matrix
-                for (size_t row = 0; row != noise.size(); row++) {
-                    for (size_t col = 0; col != row; ++col) {
-                        covarianceMatrix(row, col) = covarianceMatrix(col, row);
-                    }
-                }
-
-                // Compute the inverse of the covariance matrix
-                // Matrix<double> covarianceMatrixInverse = covarianceMatrix.CholeskyInverse();
-
                 // Compute the log probability
                 double logProbability = 0.0;
 
-                // for (size_t row = 0; row != noise.size(); ++row) {
-                //     for (size_t col = 0; col != noise.size(); ++col) {
-                //         logProbability += covarianceMatrixInverse(row, col) * noise[row] * noise[col];
-                //     }
-                // }
-
-                for (size_t i = 0; i != noise.size(); ++i) {
-                    logProbability += noise[i] * noise[i]; // / covarianceMatrix(i, i);
+                for (size_t row = 0; row != noise.size(); ++row) {
+                    for (size_t col = 0; col != noise.size(); ++col) {
+                        logProbability += profiledResult.inverseCovariancesMatrices(row, col) * noise[row] * noise[col];
+                    }
                 }
 
                 // Store the log probability
