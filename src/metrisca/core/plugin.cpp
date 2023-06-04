@@ -25,6 +25,10 @@
 #include "metrisca/models/hamming_weight_model.hpp"
 #include "metrisca/models/identity_model.hpp"
 
+#include "metrisca/scores/score.hpp"
+#include "metrisca/scores/CPA.hpp"
+#include "metrisca/scores/bayesian.hpp"
+
 #include "metrisca/profilers/standard_profiler.hpp"
 
 namespace metrisca {
@@ -49,6 +53,9 @@ namespace metrisca {
         METRISCA_REGISTER_PLUGIN(HammingDistanceModel, "hamming_distance");
         METRISCA_REGISTER_PLUGIN(HammingWeightModel, "hamming_weight");
         METRISCA_REGISTER_PLUGIN(IdentityModel, "identity");
+
+        METRISCA_REGISTER_PLUGIN(CPAPlugin, "cpa");
+        METRISCA_REGISTER_PLUGIN(BayesianPlugin, "bayesian");
 
         METRISCA_REGISTER_PLUGIN(StandardProfiler, "standard");
     }

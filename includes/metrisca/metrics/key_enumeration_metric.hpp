@@ -9,6 +9,7 @@
 #pragma once
 
 #include "basic_metric.hpp"
+#include "metrisca/scores/score.hpp"
 
 #include <memory>
 #include <mutex>
@@ -24,21 +25,12 @@ namespace metrisca {
         virtual Result<void, Error> Compute() override;
 
     private:
+        std::shared_ptr<ScorePlugin> m_Score;
+        std::shared_ptr<TraceDataset> m_Dataset;
 
         std::vector<uint8_t> m_Key{}; /*<! Key of the actual dataset (not the training one) */
         uint32_t m_EnumeratedKeyCount; /*<! Number of key being enumerated by the algorithm */
         uint32_t m_OutputEnumeratedKeyCount; /*<! Number of key being outputted to the file along with their scores */
-
-        std::shared_ptr<TraceDataset> m_Dataset{ nullptr };
-        std::shared_ptr<TraceDataset> m_TrainingDataset{ nullptr };
-
-        std::shared_ptr<PowerModelPlugin> m_Model{ nullptr };
-
-        uint32_t m_SampleStart;
-        uint32_t m_SampleEnd;
-        uint32_t m_TraceCount;
-        uint32_t m_TraceStep;
-        uint32_t m_SampleFilterCount{};
     };
 
 }

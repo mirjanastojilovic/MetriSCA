@@ -27,7 +27,8 @@ namespace metrisca {
         PowerModel,
         Profiler,
         Distinguisher,
-        Metric
+        Metric,
+        Score
     };
 
     class Plugin {

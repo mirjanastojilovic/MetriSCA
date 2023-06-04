@@ -112,20 +112,22 @@ namespace metrisca {
                 command->AddSubParser(parser);
             }
 
-            // Key rank enumeration subcommand
+            // Key enumeration subcommand
             {
                 ArgumentParser parser("key_enumeration", "Perform a full key enumeration from the most probable to the least probable.", "metric");
                 parser.AddPositionalArgument(ARG_NAME_DATASET, ArgumentType::Dataset, "The alias of the dataset to use.");
-                parser.AddPositionalArgument(ARG_NAME_TRAINING_DATASET, ArgumentType::Dataset, "The training dataset to be used for profiling");
-                parser.AddOptionArgument(ARG_NUMBER_SAMPLE_FILTER, { "-sf", "--sample-filter" }, ArgumentType::UInt32, "Number of sample kept after filtration. Notice that if this number is too big, this might lead to stability issues and bad-conditioned matrix.", "60");
-                parser.AddOptionArgument(ARG_NAME_MODEL, { "-m", "--model" }, ArgumentType::String, "The identifier of the power model to use.");
+                parser.AddOptionArgument(ARG_NAME_TRAINING_DATASET, { "-tr", "--training" }, ArgumentType::Dataset, "The alias of the training dataset to use. (only used by the scores)", false);
+                parser.AddOptionArgument(ARG_NAME_ENUMERATED_KEY_COUNT, { "-kc", "--key-count" }, ArgumentType::UInt32, "Number of key being enumerated", "10000");
                 parser.AddOptionArgument(ARG_NAME_OUTPUT_KEY_COUNT, { "-Kc", "--output-key-count" }, ArgumentType::UInt32, "Number of the enumerated key being outputted to the output file. By default, 0 and only output log2 of the rank of the real key", "0");
                 parser.AddOptionArgument(ARG_NAME_OUTPUT_FILE, { "-o", "--out" }, ArgumentType::String, "The path of the output CSV file to save the result into.");
                 parser.AddOptionArgument(ARG_NAME_TRACE_COUNT, { "-t", "--traces" }, ArgumentType::UInt32, "The maximum number of traces to use during analysis. Default: #traces in the dataset.", false);
                 parser.AddOptionArgument(ARG_NAME_TRACE_STEP, { "-ts", "--step" }, ArgumentType::UInt32, "If greater than zero, computes the same metric with an increasing number of traces starting at <STEP> up to <TRACES>", "0");
                 parser.AddOptionArgument(ARG_NAME_SAMPLE_START, { "-s", "--start" }, ArgumentType::UInt32, "The index of the first sample to analyse.", "0");
                 parser.AddOptionArgument(ARG_NAME_SAMPLE_END, { "-e", "--end" }, ArgumentType::UInt32, "The non-inclusive index of the last sample to analyse. Default: #samples in the dataset.", false);
-                parser.AddOptionArgument(ARG_NAME_ENUMERATED_KEY_COUNT, { "-kc", "--key-count" }, ArgumentType::UInt32, "Number of key being enumerated", "10000");
+                parser.AddOptionArgument(ARG_NAME_SCORES, { "-sc", "--scores" }, ArgumentType::String, "The identifier of the scores to use."); 
+                parser.AddOptionArgument(ARG_NAME_MODEL, { "-m", "--model" }, ArgumentType::String, "The identifier of the power model to use."); 
+                parser.AddOptionArgument(ARG_NUMBER_SAMPLE_FILTER, { "-sf", "--sample-filter" }, ArgumentType::UInt32, "Number of sample kept after filtration. Notice that if this number is too big, this might lead to stability issues and bad-conditioned matrix.", "30");
+                parser.AddOptionArgument(ARG_NAME_DISTINGUISHER, { "-d", "--distinguisher" }, ArgumentType::String, "The identifier of the distinguisher to use.", false); // Optional
                 command->AddSubParser(parser);
             }
 

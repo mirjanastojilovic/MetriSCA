@@ -247,16 +247,10 @@ namespace metrisca {
 
         // Secondly retrieve both database
         auto dataset = args.GetDataset(ARG_NAME_DATASET);
-        auto training_dataset = args.GetDataset(ARG_NAME_TRAINING_DATASET);
-
         if(!dataset.has_value())
             return Error::MISSING_ARGUMENT;
 
-        if(!training_dataset.has_value())
-            return Error::MISSING_ARGUMENT;
-
         m_Dataset = dataset.value();
-        m_TrainingDataset = training_dataset.value();
 
         // Ensures the actual dataset has fixed key
         if (m_Dataset->GetHeader().KeyMode != KeyGenerationMode::FIXED) {
@@ -264,44 +258,21 @@ namespace metrisca {
             return Error::UNSUPPORTED_OPERATION;
         }
 
+        // Retrieve the score plugin
+        auto score_name = args.GetString(ARG_NAME_SCORES);
+        if (!score_name.has_value()) {
+            return Error::MISSING_ARGUMENT;
+        }
+        METRISCA_INFO("Constructing the score plugin: {}", score_name.value());
+        auto score_result = PluginFactory::The().ConstructAs<ScorePlugin>(PluginType::Score, score_name.value(), args);
+        if (score_result.IsError()) {
+            METRISCA_ERROR("Failed to construct the score plugin");
+            return score_result.Error();
+        }
+        m_Score = std::move(score_result.Value());
+
         // Ensure that the size of the key for both dataset matches (as well as all other parameters)
         const auto& header1 = m_Dataset->GetHeader();
-        const auto& header2 = m_TrainingDataset->GetHeader();
-
-        if (header1.KeySize != header2.KeySize ||
-            header1.PlaintextSize != header2.PlaintextSize ||
-            header1.EncryptionType != header2.EncryptionType ||
-            header1.NumberOfSamples != header2.NumberOfSamples) {
-            METRISCA_ERROR("KeyEnumerationMetric requires both the training and testing dataset to have the same configuration");
-            return Error::UNSUPPORTED_OPERATION;
-        }
-
-        // Find the model
-        auto model = args.GetString(ARG_NAME_MODEL);
-        if(!model.has_value())
-            return Error::MISSING_ARGUMENT;
-
-        auto model_or_error = PluginFactory::The().ConstructAs<PowerModelPlugin>(PluginType::PowerModel, model.value(), args);
-        if(model_or_error.IsError())
-            return model_or_error.Error();
-        m_Model = model_or_error.Value();
-
-        // Retrieve pratical information about the dataset
-        auto sample_start = args.GetUInt32(ARG_NAME_SAMPLE_START);
-        auto sample_end = args.GetUInt32(ARG_NAME_SAMPLE_END);
-        auto trace_count = args.GetUInt32(ARG_NAME_TRACE_COUNT);
-        auto trace_step = args.GetUInt32(ARG_NAME_TRACE_STEP);
-
-        m_SampleStart = sample_start.value_or(0);
-        m_SampleEnd = sample_end.value_or(header1.NumberOfSamples);
-
-        m_TraceCount = trace_count.value_or(header1.NumberOfTraces);
-        m_TraceStep = trace_step.value_or(0);
-
-        if (m_SampleStart >= m_SampleEnd) return Error::INVALID_ARGUMENT;
-        if (m_SampleEnd > header1.NumberOfSamples) return Error::INVALID_ARGUMENT;
-        if (m_TraceCount > header1.NumberOfTraces) return Error::INVALID_ARGUMENT;
-        if (m_TraceStep >= m_TraceCount) return Error::INVALID_ARGUMENT;
 
         // Retrieve the number of enumerated key count
         auto enumerated_key_count = args.GetUInt32(ARG_NAME_ENUMERATED_KEY_COUNT);
@@ -322,14 +293,6 @@ namespace metrisca {
             return Error::INVALID_ARGUMENT;
         }
 
-        // Retrieve number of POI
-        m_SampleFilterCount = args.GetUInt32(ARG_NUMBER_SAMPLE_FILTER).value_or(m_SampleEnd - m_SampleStart);
-
-        if (m_SampleFilterCount > m_SampleEnd - m_SampleStart) {
-            METRISCA_ERROR("Cannot select number of poi higher than number of samples");
-            return Error::INVALID_ARGUMENT;
-        }
-
         // Retrieve the key from the dataset
         auto key_span = m_Dataset->GetKey(0);
         m_Key.insert(m_Key.end(), key_span.begin(), key_span.end());
@@ -346,25 +309,18 @@ namespace metrisca {
 
     Result<void, Error> KeyEnumerationMetric::Compute()
     {
-        // Generate a list of steps
-        std::vector<uint32_t> steps = (m_TraceStep > 0) ?
-            numerics::ARange(m_TraceStep, m_TraceCount + 1, m_TraceStep) :
-            std::vector<uint32_t>{ m_TraceCount };
+        // First of, we need to compute the score for each key byte
+        // for each step
+        std::vector<std::pair<uint32_t, std::vector<std::array<double, 256>>>> scores;
 
-        // First compute the score for each key for each key byte
-        METRISCA_INFO("Computing score(s) for each key and key byte");
-        auto resultTemplateAttack = metrisca::runTemplateAttack(m_TrainingDataset,
-                                    m_Dataset,
-                                    m_Model,
-                                    m_TraceCount,
-                                    m_TraceStep,
-                                    m_SampleStart,
-                                    m_SampleEnd,
-                                    m_SampleFilterCount);
-        if (resultTemplateAttack.IsError()) {
-            return resultTemplateAttack.Error();
+        {
+            auto result = m_Score->ComputeScores();
+            if (result.IsError()) {
+                METRISCA_ERROR("Failed to compute the score for the current dataset");
+                return result.Error();
+            }
+            scores = std::move(result.Value());
         }
-        TemplateAttackResult scores = resultTemplateAttack.Value();
 
         // Openning output csv file and dump the score to the 
         // output file
@@ -372,11 +328,11 @@ namespace metrisca {
  
         METRISCA_INFO("Writing scores to the output csv file");
         writer << "trace-count" << "keyByte" << "scores..." << csv::EndRow;
-        for (size_t stepIdx = 0; stepIdx != steps.size(); stepIdx++) {
+        for (auto& [step, score] : scores) {
             for (size_t byte = 0; byte != m_Key.size(); ++byte) {
-                writer << steps[stepIdx] << byte;
+                writer << step << byte;
                 for (size_t key = 0; key != 256; ++key) {
-                    writer << scores[stepIdx][byte][key];
+                    writer << score[byte][key];
                 }
                 writer << csv::EndRow;
             }
@@ -386,12 +342,12 @@ namespace metrisca {
         // Perform the key enumeration part using the score
         METRISCA_INFO("Performing key enumeration phase, enumerating up to {} keys", m_EnumeratedKeyCount);
         std::vector<std::vector<EnumeratedElement>> outputPerSteps;
-        outputPerSteps.resize(steps.size());
+        outputPerSteps.resize(scores.size());
 
-        metrisca::parallel_for(0, steps.size(), [&](size_t stepIdx)
+        metrisca::parallel_for(0, scores.size(), [&](size_t stepIdx)
         {
             // Retrieve the score corresponding with the current step
-            const std::vector<std::array<double, 256>>& score = scores[stepIdx];
+            const std::vector<std::array<double, 256>>& score = scores[stepIdx].second;
         
             // Constructing the enumerating context
             std::vector<LazyGeneratorFn> lazyGenerators;
@@ -417,7 +373,7 @@ namespace metrisca {
         // Generate the key string
         PartialKey key(m_Key.begin(), m_Key.end());
 
-        for (size_t stepIdx = 0; stepIdx != steps.size(); stepIdx++) {
+        for (size_t stepIdx = 0; stepIdx != scores.size(); stepIdx++) {
             // Find the rank and score of the correct key
             size_t rank = 0;
             double score = DOUBLE_NAN;
@@ -429,7 +385,7 @@ namespace metrisca {
                 }
             }
 
-            writer << steps[stepIdx] << rank << score;
+            writer << scores[stepIdx].first << rank << score;
 
             // Enumerate the required amount of first key
             for (size_t i = 0; i < m_OutputEnumeratedKeyCount; ++i) {

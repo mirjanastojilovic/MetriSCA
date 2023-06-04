@@ -97,4 +97,5 @@ namespace metrisca {
 #define ARG_NAME_OUTPUT_KEY_COUNT         "output-key-count"
 #define ARG_NAME_BIN_COUNT                "bin-count"
 #define ARG_NUMBER_SAMPLE_FILTER          "number-sample-filter"
+#define ARG_NAME_SCORES                   "scores"
 }

@@ -61,6 +61,7 @@ namespace metrisca {
         // Compute the pearson correlation coefficient between the model and the sample.
         // This operation is performed on every sample in the range.
         std::atomic_uint32_t x = 0;
+        std::atomic_bool warning = false;
 
         metrisca::parallel_for(m_SampleStart, m_SampleStart + m_SampleCount, [&](size_t start, size_t end, bool mainThread)
         {    
@@ -94,8 +95,8 @@ namespace metrisca {
                         double divisor = std::sqrt(step_trace_count * sums[4] - sums[2] * sums[2]) * std::sqrt(step_trace_count * sums[3] - sums[1] * sums[1]);
                         double pearson_coeff = (step_trace_count * sums[0] - sums[1] * sums[2]) / divisor;
 
-                        if (divisor <= 1e-9 && k == 0 && step == 0) { // Only print for first key (to prevent 256 message for each sample)
-                            METRISCA_WARN("Null variance for sample {}, this can be caused by fixed plaintext accross all samples", s);
+                        if (divisor <= 1e-9 && k == 0 && step == 0 && !warning.exchange(true)) { // Only print for first key (to prevent 256 message for each sample)
+                            METRISCA_WARN("Pearson correlation coefficient is ill-defined, null variance detected, some plaintexts may be constant");
                         }
 
                         result[step].second(k, s - m_SampleStart) = std::abs(pearson_coeff);

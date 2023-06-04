@@ -24,22 +24,6 @@ namespace metrisca
     typedef std::vector<std::vector<std::array<double, 256>>> TemplateAttackResult;
 
     /**
-     * @brief Linear correction factor for the template attack.
-     */
-    struct LinearCorrectionFactor
-    {
-        double alpha, beta;
-
-        inline double operator()(int32_t x) const
-        {
-            int32_t result = (int32_t) (alpha * (double) x + beta);
-            if (result <= 0) return 0.0;
-            else if (result >= 255) return 255.0;
-            else return (double) result;
-        }
-    };
-
-    /**
      * @brief Run a template attack on the given datasets.
      * 
      * @param profilingDataset The profiling dataset.
