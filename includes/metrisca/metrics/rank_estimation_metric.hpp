@@ -12,6 +12,7 @@
 
 #include <memory>
 #include <mutex>
+#include <string>
 
 namespace metrisca {
 
@@ -23,17 +24,9 @@ namespace metrisca {
         virtual Result<void, Error> Compute() override;
 
     private:
-        Result<std::array<double, 256>, Error> ComputeProbabilities(size_t number_of_traces, size_t keyByteIdx);
-
-        std::mutex m_GlobalLock; // global lock
-
-        std::vector<uint8_t> m_Key{};
+        std::shared_ptr<ScorePlugin> m_ScorePlugin{};
+        std::string m_Key;
         uint32_t m_BinCount{};
-        uint32_t m_TraceStep{};
-        uint32_t m_TraceCount{};
-        uint32_t m_SampleStart{};
-        uint32_t m_SampleCount{};
-        uint32_t m_SampleFilterCount{};
     };
 
 }

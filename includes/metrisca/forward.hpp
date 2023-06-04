@@ -22,6 +22,7 @@ namespace metrisca {
     class ProfilerPlugin;
     class MetricPlugin;
     class LoaderPlugin;
+    class ScorePlugin;
     enum class Error : uint32_t;
     
     template<typename T>

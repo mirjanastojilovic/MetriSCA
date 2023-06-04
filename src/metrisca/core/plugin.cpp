@@ -28,6 +28,7 @@
 #include "metrisca/scores/score.hpp"
 #include "metrisca/scores/CPA.hpp"
 #include "metrisca/scores/bayesian.hpp"
+#include "metrisca/scores/old_bayesian.hpp"
 
 #include "metrisca/profilers/standard_profiler.hpp"
 
@@ -56,6 +57,7 @@ namespace metrisca {
 
         METRISCA_REGISTER_PLUGIN(CPAPlugin, "cpa");
         METRISCA_REGISTER_PLUGIN(BayesianPlugin, "bayesian");
+        METRISCA_REGISTER_PLUGIN(OldBayesianPlugin, "old_bayesian");
 
         METRISCA_REGISTER_PLUGIN(StandardProfiler, "standard");
     }
