@@ -139,13 +139,52 @@ static std::array<double, 256> computeProbabilities(
         }
     }
     
+    // Filter all "duplicated" samples (aka. samples with a correlation of 1 with another sample)
+    std::vector<size_t> newSelectedSamples;
+    Matrix<double> newCovariance;
+    {
+        std::vector<size_t> selectedSamplesIndexBuffer;
+        selectedSamplesIndexBuffer.reserve(selectedSamples.size());
+
+        for (size_t i = 0; i != selectedSamples.size(); ++i) {
+            // Find whether or not we shall ignore this sample
+            bool skip = false;
+
+            for (size_t j = 0; j != selectedSamplesIndexBuffer.size(); ++j) {
+                double correlation = covariance(i, selectedSamplesIndexBuffer[j]) /
+                                     std::sqrt(covariance(i, i) * covariance(selectedSamplesIndexBuffer[j], selectedSamplesIndexBuffer[j]));
+                if (std::abs(correlation) > 1 - 1e-2) {
+                    skip = true;
+                    break;
+                }
+            }
+
+            if (!skip) {
+                selectedSamplesIndexBuffer.push_back(i);
+            }
+        }
+
+        // Rebuild the selected samples list
+        for (size_t idx : selectedSamplesIndexBuffer) {
+            newSelectedSamples.push_back(selectedSamples[idx]);
+        }
+
+        // Rebuild the covariance matrix
+        newCovariance.Resize(newSelectedSamples.size(), newSelectedSamples.size());
+        for (size_t i = 0; i != newSelectedSamples.size(); ++i) {
+            for (size_t j = 0; j != newSelectedSamples.size(); ++j) {
+                newCovariance(i, j) = covariance(selectedSamplesIndexBuffer[i], selectedSamplesIndexBuffer[j]);
+            }
+        }
+    }
+
     // Compute the inverse of the covariance matrix
-    Matrix<double> inverseCovariance = covariance.CholeskyInverse();
+    Matrix<double> inverseCovariance = newCovariance.CholeskyInverse();
 
     // Finally compute the probabilities
     std::array<double, 256> probabilities;
     std::vector<double> noiseVector;
-    noiseVector.resize(reducedSampleCount, 0.0);
+    noiseVector.resize(newSelectedSamples.size(), 0.0);
 
     for (size_t groupIdx = 0; groupIdx != 256; groupIdx++)
     {
@@ -158,15 +197,15 @@ static std::array<double, 256> computeProbabilities(
             // In case corresponding group does not exists
             if (groupedByExpectedResult[expectedOutput].empty()) continue;
 
-            for (size_t j = 0; j != reducedSampleCount; ++j)
+            for (size_t j = 0; j != newSelectedSamples.size(); ++j)
             {
-                noiseVector[j] = dataset->GetSample(selectedSamples[j])[traceIdx] - averages[expectedOutput][selectedSamples[j] - sampleStart];
+                noiseVector[j] = dataset->GetSample(newSelectedSamples[j])[traceIdx] - averages[expectedOutput][newSelectedSamples[j] - sampleStart];
             }
 
             // Compute probabilities
-            for (size_t i = 0; i != reducedSampleCount; ++i)
+            for (size_t i = 0; i != newSelectedSamples.size(); ++i)
             {
-                for (size_t j = 0; j != reducedSampleCount; ++j)
+                for (size_t j = 0; j != newSelectedSamples.size(); ++j)
                 {
                     probabilities[groupIdx] += noiseVector[i] * inverseCovariance(i, j) * noiseVector[j];
                 }
