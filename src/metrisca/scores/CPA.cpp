@@ -87,6 +87,7 @@ namespace metrisca {
 
                 // Finally, store the best correlation for each key candidate
                 scores[stepIdx].second.push_back(bestCorrelations);
+                scores[stepIdx].first = steps[stepIdx];
             }
         }
 

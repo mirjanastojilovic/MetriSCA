@@ -39,6 +39,7 @@ static std::array<double, 256> computeProbabilities(
 ) {
     // For each group, computes the average within the group
     std::array<std::vector<double>, 256> averages; // [expected_result][sample]
+    std::vector<bool> groupWithoutModel(256, false);
 
     for (size_t groupIdx = 0; groupIdx != 256; groupIdx++) {
         averages[groupIdx].resize(sampleCount, 0.0);
@@ -56,6 +57,7 @@ static std::array<double, 256> computeProbabilities(
         }
 
         // If no traces matched, then set the average to NaN
+        groupWithoutModel[groupIdx] = (matching_trace_count == 0);
         if (matching_trace_count == 0) {
             averages[groupIdx].assign(sampleCount, DOUBLE_NAN);
             continue;
@@ -74,11 +76,11 @@ static std::array<double, 256> computeProbabilities(
 
     for (size_t i = 0; i != 256; ++i) {
         // Skip group without model
-        if (groupedByExpectedResult[i].empty()) continue;
+        if (groupWithoutModel[i]) continue;
 
         for (size_t j = i + 1; j != 256; ++j) {
             // Skip group without model
-            if (groupedByExpectedResult[j].empty()) continue;
+            if (groupWithoutModel[j]) continue;
 
             // Iterate over all available samples
             for (size_t sampleIdx = 0; sampleIdx != sampleCount; ++sampleIdx) {
@@ -124,6 +126,8 @@ static std::array<double, 256> computeProbabilities(
     for (size_t groupIdx = 0; groupIdx != 256; ++groupIdx)
     {
         for (size_t traceIdx : groupedByExpectedResult[groupIdx]) {
+            if (traceIdx >= traceCount) continue;
+            
             for (size_t row = 0; row != reducedSampleCount; row++) {
                 for (size_t col = 0; col != reducedSampleCount; col++) {
                     covariance(row, col) += (dataset->GetSample(selectedSamples[row])[traceIdx] - averages[groupIdx][selectedSamples[row] - sampleStart]) *
@@ -148,7 +152,7 @@ static std::array<double, 256> computeProbabilities(
 
         for (size_t i = 0; i != selectedSamples.size(); ++i) {
             // Find whether or not we shall ignore this sample
-            bool skip = false;
+            bool skip = covariance(i, i) < 1e-2;
 
             for (size_t j = 0; j != selectedSamplesIndexBuffer.size(); ++j) {
                 double correlation = covariance(i, selectedSamplesIndexBuffer[j]) /
@@ -195,7 +199,9 @@ static std::array<double, 256> computeProbabilities(
             int32_t expectedOutput = modelizedTraces(groupIdx, traceIdx);
 
             // In case corresponding group does not exists
-            if (groupedByExpectedResult[expectedOutput].empty()) continue;
+            if (groupWithoutModel[groupIdx]) {
+                continue;
+            }
 
             for (size_t j = 0; j != newSelectedSamples.size(); ++j)
             {
