@@ -81,7 +81,7 @@ namespace metrisca {
 
                 for (size_t key = 0; key != 256; key++) {
                     for (size_t sampleIdx = 0; sampleIdx != pearsonCorrelatioMatrix.GetHeight(); sampleIdx++) {
-                        bestCorrelations[key] = std::max(bestCorrelations[key], std::abs(pearsonCorrelatioMatrix(sampleIdx, key)));
+                        bestCorrelations[key] = std::log(std::max(bestCorrelations[key], std::abs(pearsonCorrelatioMatrix(sampleIdx, key))));
                     }
                 }
 
