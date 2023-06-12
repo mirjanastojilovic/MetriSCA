@@ -473,7 +473,8 @@ namespace metrisca { namespace numerics {
         value -= min;
         value /= (max - min);
         uint64_t result = static_cast<uint64_t>(std::floor(value * (binCount - 1)));
-        if (result < 0) return 0;
+        if (std::abs(min - max) < 1e5) return 0;
+        else if (result < 0) return 0;
         else if (result >= binCount) return binCount - 1;
         else return  result;
     }
