@@ -8,7 +8,10 @@
 
 #include "metrisca/models/model.hpp"
 
+#include "metrisca/core/logger.hpp"
 #include "metrisca/core/trace_dataset.hpp"
+
+#include <exception>
 
 namespace metrisca {
 
@@ -29,6 +32,21 @@ namespace metrisca {
             return Error::INVALID_ARGUMENT;
 
         return {};
+    }
+
+    void PowerModelPlugin::SetByteIndex(uint32_t byteIndex)
+    {
+        if (m_Dataset == nullptr) {
+            METRISCA_ERROR("Cannot call SetByteIndex prior to initialization");
+            throw std::runtime_error("Cannot call SetByteIndex prior to initialization");
+        }
+
+        if (m_ByteIndex < 0 || m_ByteIndex >= m_Dataset->GetHeader().PlaintextSize) {
+            METRISCA_ERROR("Cannot set byte index to value: {}, invalid value or out of range", byteIndex);
+            throw std::runtime_error("Cannot set byte index to the provided value");
+        }
+
+        m_ByteIndex = byteIndex;
     }
 
 }

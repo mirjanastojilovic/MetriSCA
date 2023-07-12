@@ -6,17 +6,27 @@
  * BSD-style license that can be found in the LICENSE.md file.
  */
 
-#include "distinguisher.hpp"
+#pragma once
+
+#include "basic_metric.hpp"
+
+#include <memory>
+#include <mutex>
+#include <string>
 
 namespace metrisca {
 
-    class PearsonDistinguisher : public DistinguisherPlugin {
+    class RankEstimationMetric : public BasicMetricPlugin {
     public:
 
         virtual Result<void, Error> Init(const ArgumentList& args) override;
 
-        virtual Result<std::vector<std::pair<uint32_t, Matrix<double>>>, Error> Distinguish() override;
+        virtual Result<void, Error> Compute() override;
 
+    private:
+        std::shared_ptr<ScorePlugin> m_ScorePlugin{};
+        std::string m_Key;
+        uint32_t m_BinCount{};
     };
 
 }

@@ -10,6 +10,7 @@
 #define _NUMERICS_HPP
 
 #include "math.hpp"
+#include "metrisca/core/assert.hpp"
 
 #include <vector>
 #include <cstdint>
@@ -18,6 +19,8 @@
 #include <array>
 
 #include <nonstd/span.hpp>
+
+#define METRISCA_SQRT_2 1.4142135623730950488
 
 namespace metrisca { namespace numerics {
 
@@ -464,6 +467,58 @@ namespace metrisca { namespace numerics {
         return result;
     }
 
+    /// Find bin utility for histogram
+    static size_t FindBin(double value, double min, double max, size_t binCount)
+    {
+        value -= min;
+        value /= (max - min);
+        uint64_t result = static_cast<uint64_t>(std::floor(value * (binCount - 1)));
+        if (std::abs(min - max) < 1e5) return 0;
+        else if (result < 0) return 0;
+        else if (result >= binCount) return binCount - 1;
+        else return  result;
+    }
+
+    /// Convoluting two list together (result is of length N + M - 1)
+    template<typename T, typename R>
+    static auto Convolve(const nonstd::span<T>& A, const nonstd::span<R>& B) -> std::vector<std::decay_t<decltype(A[0] * B[0])>>
+    {
+        using RType = typename std::decay_t<decltype(A[0] * B[0])>;
+        std::vector<RType> result;
+        const int N = (int) A.size();
+        const int M = (int) B.size();
+
+        // Without loss of generality we assume that N >= M
+        if (M > N) {
+            return Convolve(B, A);
+        }
+
+        result.resize(N + M - 1, (RType) 0);
+
+        // Compute each component individually, notice that this algorithm
+        // is not the most efficient one, because FFT exists
+        for (int i = 0; i != result.size(); ++i)
+        {
+            // Compute last index of the sumation corresponding respectively
+            // to the A array and to the B array. (Excluded)
+            int last1 = std::min(N, i + 1);
+            int last2 = std::min(M, N + M - i - 1);
+
+            // Compute first index of the sumation corresponding respectively
+            // to the A array and to the B array. (Included)
+            int first1 = std::max(std::max(0, i - N), (last1 - last2));
+            int first2 = std::max(0, M - (i + 1));
+
+            int range = last2 - first2;
+
+            // Finally perform the summation operation
+            for (int k = 0; k != range; ++k) {
+                result[i] += A[first1 + k] * B[M - (first2 + k) - 1];
+            }
+        }
+
+        return result;
+    }
 }}
 
 #endif

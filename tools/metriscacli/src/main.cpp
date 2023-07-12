@@ -7,10 +7,13 @@
  */
 
 #include "metrisca.hpp"
+#include "metrisca/core/indicators.hpp"
 
 #include "app/application.hpp"
+#include "app/bin_loader.hpp"
 
 #include <iostream>
+#include <filesystem>
 
 using namespace metrisca;
 
@@ -123,17 +126,170 @@ int binloader(TraceDatasetBuilder& builder, const std::string& filename)
 }
 */
 
-class TestLoader : public LoaderPlugin {
+namespace fs = std::filesystem;
+
+
+class TxtLoader : public LoaderPlugin {
 public:
     virtual Result<void, Error> Init(const ArgumentList& args) override
     {
-        return Error::FILE_NOT_FOUND;
+        auto file_name_arg = args.GetString("file");
+        if (!file_name_arg.has_value()) {
+            return Error::MISSING_ARGUMENT;
+        }
+
+        m_DbFilePath = fs::path(file_name_arg.value());
+        if (!std::filesystem::exists(m_DbFilePath) || !std::filesystem::is_regular_file(m_DbFilePath)) {
+            METRISCA_ERROR("The specified file does not exists");
+            return Error::FILE_NOT_FOUND;
+        }
+
+        m_KeyFilePath = m_DbFilePath.parent_path() / "key.txt";
+        if (!std::filesystem::exists(m_KeyFilePath) || !std::filesystem::is_regular_file(m_KeyFilePath)) {
+            METRISCA_ERROR("Cannot find the key file at default location : {}", m_KeyFilePath.string());
+            return Error::FILE_NOT_FOUND;
+        }
+
+        m_PlaintextFilePath = m_DbFilePath.parent_path() / "plaintexts.txt";
+        if (!std::filesystem::exists(m_PlaintextFilePath) || !std::filesystem::is_regular_file(m_PlaintextFilePath)) {
+            METRISCA_ERROR("Cannot find the key file at default location : {}", m_PlaintextFilePath.string());
+            return Error::FILE_NOT_FOUND;
+        }
+
+        return {};
     }
 
     virtual Result<void, Error> Load(TraceDatasetBuilder& builder) override
     {
-        return Error::FILE_NOT_FOUND;
+        uint32_t num_traces = 1000; 
+        uint32_t num_samples = 8000;
+
+        builder.EncryptionType = EncryptionAlgorithm::AES_128;
+        builder.KeyMode = KeyGenerationMode::FIXED;
+        builder.KeySize = 16;
+        builder.PlaintextMode = PlaintextGenerationMode::RANDOM;
+        builder.PlaintextSize = 16;
+        builder.NumberOfSamples = num_samples;
+        builder.NumberOfTraces = num_traces;
+        builder.CurrentResolution = 0.0039215;
+        builder.ReserveInternals();
+    
+        // First of all read the traces from the file
+        {
+            std::ifstream file(m_DbFilePath);
+            if (!file.is_open()) {
+                METRISCA_ERROR("Failed to open file at path {} for reading", m_DbFilePath.string());
+                return Error::IO_FAILURE;
+            }
+
+            // Read each line of the file
+            std::string line;
+            std::vector<int> trace;
+            trace.resize(num_samples);
+    
+            size_t line_number = 0;
+
+            indicators::BlockProgressBar bar {
+                indicators::option::BarWidth(60),
+                indicators::option::MaxProgress(num_traces * num_samples),
+                indicators::option::PrefixText("Extracting traces from TXT "),
+                indicators::option::ShowElapsedTime(true),
+                indicators::option::ShowRemainingTime(true)
+            };
+
+            std::vector<double> traces;
+            while (std::getline(file, line)) {
+                if (line_number % 10000 == 0) {
+                    bar.set_option(indicators::option::PostfixText{
+                        std::to_string(line_number) + "/" + std::to_string(num_traces * num_samples)
+                    });
+                    bar.set_progress(line_number);
+                    bar.tick();
+                }
+
+                // Parse a line in the file and extract the trace measurement
+                std::string trace_val_str = line.substr(line.find(' ') + 1, line.size());
+                double trace_val = stod(trace_val_str);
+
+                // Convert the current measurement into an integer value and accumulate the trace
+                uint32_t sample_num = line_number % num_samples;
+                int value = (int) (trace_val / builder.CurrentResolution);
+                trace[sample_num] = value;
+                if (value < 0 || value >= 256) {
+                    METRISCA_ERROR("Invalid sample value (out of range) {} for value {}. Make sure the resolution is set up in such as way data matches this range", value, trace_val);
+                    return Error::INVALID_DATA_TYPE;
+                }
+                
+                
+                if(sample_num == num_samples - 1) {
+                    builder.AddTrace(trace);
+                }
+
+                // Increment the line number
+                line_number++;
+            }
+
+            bar.mark_as_completed();
+        }
+
+        // Secondly load the plainText
+        {
+            std::ifstream file(m_PlaintextFilePath);
+            if (!file.is_open()) {
+                METRISCA_ERROR("Failed to open file at path {} for reading", m_PlaintextFilePath.string());
+                return Error::IO_FAILURE;
+            }
+
+            std::string line;
+            while (std::getline(file, line)) {
+                std::vector<uint8_t> plaintext;
+                for (size_t i = 0; i != 16; ++i) {
+                    uint8_t result = 0;
+                    for (size_t j = 0; j != 8; ++j) {
+                        result <<= 1;
+                        result += (int) (line[8 * i + j] == '1');
+                    }
+                    plaintext.push_back(result);
+                }
+
+                builder.AddPlaintext(std::move(plaintext));
+            }
+        }
+
+        // Finally add the key
+        {
+            std::ifstream file(m_KeyFilePath);
+            if (!file.is_open()) {
+                METRISCA_ERROR("Failed to open file at path {} for reading", m_KeyFilePath.string());
+                return Error::IO_FAILURE;
+            }
+
+            std::string line;
+            if (!std::getline(file, line)) {
+                METRISCA_ERROR("Empty key file");
+                return Error::IO_FAILURE;
+            }
+
+            std::vector<uint8_t> key;
+            for (size_t i = 0; i != 16; ++i) {
+                uint8_t result = 0;
+                for (size_t j = 0; j != 8; ++j) {
+                    result <<= 1;
+                    result += (int) (line[8 * i + j] == '1');
+                }
+                key.push_back(result);
+            }
+            
+            builder.AddKey(std::move(key));
+        }
+
+        return {};
     }
+
+private:
+    fs::path m_DbFilePath{};
+    fs::path m_KeyFilePath{};
+    fs::path m_PlaintextFilePath{};
 };
 
 int main(int argc, char *argv[])
@@ -143,7 +299,9 @@ int main(int argc, char *argv[])
     // This line registers the loader into the application so that it can
     // be called using the command 'load'
     // app.RegisterLoader("txtloader", txtloader);
-    METRISCA_REGISTER_PLUGIN(TestLoader, "testloader");
+    METRISCA_REGISTER_PLUGIN(TxtLoader, "txtloader");
+    typedef metrisca::BinLoader<100000, 535> MyBinLoader;
+    METRISCA_REGISTER_PLUGIN(MyBinLoader, "binloader");
 
     auto result = app.Start(argc, argv);
 

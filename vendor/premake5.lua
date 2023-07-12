@@ -3,3 +3,4 @@
 include("span-lite")
 include("spdlog")
 include("catch2")
+include("indicators")

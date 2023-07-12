@@ -18,6 +18,9 @@
 #include <fstream>
 #include <iostream>
 
+#include <stdlib.h> // for system(...)
+
+
 #define BIND_COMMAND_HANDLER(command) std::bind(&command, this, std::placeholders::_1)
 
 namespace metrisca {
@@ -26,6 +29,20 @@ namespace metrisca {
     {
         // Quit command
         RegisterCommand({"quit", "Terminate the application."}, BIND_COMMAND_HANDLER(Application::HandleQuit), "Terminate the application.");
+
+        // Clear command
+        // Each time I type clear on the console and I get an error I feel bad
+        {
+            ArgumentParser parser("clear", "Are you tired of cluttered screens and messy command histories? Fear not, for the \"clear\" command is here to save the day!");
+            RegisterCommand(parser, [](const ArgumentList& arguments) -> Result<void, Error> {
+#if defined(_WIN32)
+                system("cls");
+#elif defined (__LINUX__) || defined(__gnu_linux__) || defined(__linux__) || defined(__APPLE__)
+                system("clear");
+#endif
+                return {};
+            }, "Clear the text on the console so that your screen may rest");
+        }
 
         // Help command
         {
@@ -78,6 +95,44 @@ namespace metrisca {
             //        subparsers. It would be nice to have a more integrated way of doing that.
             parser.AddPositionalArgument("args...", ArgumentType::String, "Additional metric arguments.", false);
             auto command = RegisterCommand(parser, BIND_COMMAND_HANDLER(Application::HandleMetric), "Compute metrics on a dataset.");
+
+            // Rank estimation subcommand
+            {
+                ArgumentParser parser("rank_estimation", "Compute the rank estimation of each byte for a key for an increasing number of traces.", "metric");
+                parser.AddPositionalArgument(ARG_NAME_DATASET, ArgumentType::Dataset, "The alias of the dataset to use.");
+                parser.AddOptionArgument(ARG_NAME_MODEL, { "-m", "--model" }, ArgumentType::String, "The identifier of the power model to use.");
+                parser.AddOptionArgument(ARG_NAME_TRAINING_DATASET, { "-tr", "--training" }, ArgumentType::Dataset, "The alias of the training dataset to use. (only used by the scores)", false);
+                parser.AddOptionArgument(ARG_NAME_DISTINGUISHER, { "-d", "--distinguisher" }, ArgumentType::String, "The identifier of the distinguisher to use.");
+                parser.AddOptionArgument(ARG_NUMBER_SAMPLE_FILTER, { "-sf", "--sample-filter" }, ArgumentType::UInt32, "Number of sample kept after filtration. Notice that if this number is too big, this might lead to stability issues and bad-conditioned matrix.", "30");
+                parser.AddOptionArgument(ARG_NAME_OUTPUT_FILE, { "-o", "--out" }, ArgumentType::String, "The path of the output CSV file to save the result into.");
+                parser.AddOptionArgument(ARG_NAME_TRACE_COUNT, { "-t", "--traces" }, ArgumentType::UInt32, "The maximum number of traces to use during analysis. Default: #traces in the dataset.", false);
+                parser.AddOptionArgument(ARG_NAME_TRACE_STEP, { "-ts", "--step" }, ArgumentType::UInt32, "If greater than zero, computes the same metric with an increasing number of traces starting at <STEP> up to <TRACES>", "0");
+                parser.AddOptionArgument(ARG_NAME_SAMPLE_START, { "-s", "--start" }, ArgumentType::UInt32, "The index of the first sample to analyse.", "0");
+                parser.AddOptionArgument(ARG_NAME_SAMPLE_END, { "-e", "--end" }, ArgumentType::UInt32, "The non-inclusive index of the last sample to analyse. Default: #samples in the dataset.", false);
+                parser.AddOptionArgument(ARG_NAME_BIN_COUNT, { "-b", "--bin-count" }, ArgumentType::UInt32, "Number of bin when building the histogram according to the enumeration algorithm", "10000");
+                parser.AddOptionArgument(ARG_NAME_SCORES, { "-sc", "--scores" }, ArgumentType::String, "The identifier of the scores to use."); 
+                parser.AddOptionArgument(ARG_NUMBER_SAMPLE_FILTER, { "-sf", "--sample-filter" }, ArgumentType::UInt32, "Number of sample kept after filtration. Notice that if this number is too big, this might lead to stability issues and bad-conditioned matrix.", "60");
+                command->AddSubParser(parser);
+            }
+
+            // Key enumeration subcommand
+            {
+                ArgumentParser parser("key_enumeration", "Perform a full key enumeration from the most probable to the least probable.", "metric");
+                parser.AddPositionalArgument(ARG_NAME_DATASET, ArgumentType::Dataset, "The alias of the dataset to use.");
+                parser.AddOptionArgument(ARG_NAME_TRAINING_DATASET, { "-tr", "--training" }, ArgumentType::Dataset, "The alias of the training dataset to use. (only used by the scores)", false);
+                parser.AddOptionArgument(ARG_NAME_ENUMERATED_KEY_COUNT, { "-kc", "--key-count" }, ArgumentType::UInt32, "Number of key being enumerated", "10000");
+                parser.AddOptionArgument(ARG_NAME_OUTPUT_KEY_COUNT, { "-Kc", "--output-key-count" }, ArgumentType::UInt32, "Number of the enumerated key being outputted to the output file. By default, 0 and only output log2 of the rank of the real key", "0");
+                parser.AddOptionArgument(ARG_NAME_OUTPUT_FILE, { "-o", "--out" }, ArgumentType::String, "The path of the output CSV file to save the result into.");
+                parser.AddOptionArgument(ARG_NAME_TRACE_COUNT, { "-t", "--traces" }, ArgumentType::UInt32, "The maximum number of traces to use during analysis. Default: #traces in the dataset.", false);
+                parser.AddOptionArgument(ARG_NAME_TRACE_STEP, { "-ts", "--step" }, ArgumentType::UInt32, "If greater than zero, computes the same metric with an increasing number of traces starting at <STEP> up to <TRACES>", "0");
+                parser.AddOptionArgument(ARG_NAME_SAMPLE_START, { "-s", "--start" }, ArgumentType::UInt32, "The index of the first sample to analyse.", "0");
+                parser.AddOptionArgument(ARG_NAME_SAMPLE_END, { "-e", "--end" }, ArgumentType::UInt32, "The non-inclusive index of the last sample to analyse. Default: #samples in the dataset.", false);
+                parser.AddOptionArgument(ARG_NAME_SCORES, { "-sc", "--scores" }, ArgumentType::String, "The identifier of the scores to use."); 
+                parser.AddOptionArgument(ARG_NAME_MODEL, { "-m", "--model" }, ArgumentType::String, "The identifier of the power model to use."); 
+                parser.AddOptionArgument(ARG_NUMBER_SAMPLE_FILTER, { "-sf", "--sample-filter" }, ArgumentType::UInt32, "Number of sample kept after filtration. Notice that if this number is too big, this might lead to stability issues and bad-conditioned matrix.", "30");
+                parser.AddOptionArgument(ARG_NAME_DISTINGUISHER, { "-d", "--distinguisher" }, ArgumentType::String, "The identifier of the distinguisher to use.", false); // Optional
+                command->AddSubParser(parser);
+            }
 
             // Rank subcommand
             {
@@ -558,9 +613,32 @@ namespace metrisca {
         std::string line;
         if (input.length() == 0)
         {
-            std::cout << "metrisca>";
+            std::cout << "metrisca $ ";
+            bool hasNextLine;
 
-            std::getline(std::cin, line);
+            do {
+                std::string input;
+                std::getline(std::cin, input);
+
+                // Check that the line is not empty
+                size_t last_idx = input.find_last_not_of(" \t");
+                if (last_idx == std::string::npos) {
+                    return {};
+                }
+
+                // If the line terminates with \ then continue on the next line
+                hasNextLine = input[last_idx] == '\\';
+                if (hasNextLine)
+                {
+                    line += input.substr(0, last_idx);
+                    std::cout << "...          " << std::flush;
+                }
+                else
+                {
+                    line += input;
+                }
+
+            } while(hasNextLine);
         }
         else
             line = input;

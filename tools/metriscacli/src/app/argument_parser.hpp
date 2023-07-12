@@ -18,6 +18,7 @@
 #include <exception>
 #include <sstream>
 #include <cassert>
+#include <functional>
 
 namespace metrisca {
 
@@ -31,11 +32,12 @@ namespace metrisca {
         Double,
         String,
         Boolean,
-        Dataset
+        Dataset,
     };
 
     enum class ArgumentAction {
         Store,
+        StoreList, /* creates/update a sub argumentList with corresponding name */
         StoreConst
     };
 
@@ -126,6 +128,15 @@ namespace metrisca {
         }
     };
 
+    struct BadSpecialCharException : public ParserException {
+        explicit BadSpecialCharException(const char ch)
+        {
+            std::stringstream msg;
+            msg << "Unknown special character '" << ch << "'.";
+            m_Msg = msg.str();
+        }
+    };
+
     struct BadTokenException : public ParserException {
         explicit BadTokenException(const std::string& token)
         {
@@ -148,7 +159,8 @@ namespace metrisca {
         void AddFlagArgument(const std::string& name, const std::vector<std::string>& option_strings, const std::string& description);
         void AddOptionArgument(const std::string& name, const std::vector<std::string>& option_strings, ArgumentType type, const std::string& description, const std::string& default_);
         void AddOptionArgument(const std::string& name, const std::vector<std::string>& option_strings, ArgumentType type, const std::string& description, const char* default_);
-        void AddOptionArgument(const std::string& name, const std::vector<std::string>& option_strings, ArgumentType type, const std::string& description, bool required = true);
+        void AddOptionArgument(const std::string& name, const std::vector<std::string>& option_strings, ArgumentType type, const std::string& description, bool required = true, bool createList = false);
+        void AddOptionArgumentList(const std::string& name, const std::vector<std::string>& option_strings, std::vector<std::pair<std::string, ArgumentType>> types, const std::string& description, bool required = true, bool createList = false);
 
         std::string HelpMessage() const;
 
@@ -165,12 +177,12 @@ namespace metrisca {
             Argument() {}
 
             Argument(const std::string& name, const std::vector<std::string>& option_strings, ArgumentAction action,
-                ArgumentType type, const std::string& default_, const std::string& const_val, bool positional, bool required,
+                std::vector<std::pair<std::string, ArgumentType>> types, const std::string& default_, const std::string& const_val, bool positional, bool required,
                 const std::string& description)
                 : Name(name)
                 , OptionStrings(option_strings)
                 , Action(action)
-                , Type(type)
+                , Types({ types })
                 , Default(default_)
                 , Const(const_val)
                 , IsPositional(positional)
@@ -180,12 +192,12 @@ namespace metrisca {
 
             std::string Name{};
             std::vector<std::string> OptionStrings{};
-            ArgumentAction Action = ArgumentAction::Store;
-            ArgumentType Type = ArgumentType::Unknown;
+            ArgumentAction Action = ArgumentAction::Store; // note StoreList incompatible with required
+            std::vector<std::pair<std::string, ArgumentType>> Types = { {"", ArgumentType::Unknown} };
             std::string Default{};
             std::string Const{};
             bool IsPositional = false;
-            bool IsRequired = false;
+            bool IsRequired = false; 
             std::string Description{};
         };
 

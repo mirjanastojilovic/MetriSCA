@@ -39,6 +39,11 @@ workspace "metrisca"
         runtime "Release"
         optimize "On"
 
+    filter "system:linux"
+        linkoptions {
+            "-pthread"
+        }
+
     filter {}
 
     newaction {
@@ -81,12 +86,12 @@ project "metrisca"
 
     UseSpanLite()
     UseSPDLOG()
+    UseIndicators()
 
     filter "action:vs*"
         vpaths {
             ["src/*"] = {"includes/**.hpp", "src/**.hpp", "src/**.cpp"}
         }
-
     filter {}
 
 -- This function can be called by any project that wants to include 
@@ -100,6 +105,7 @@ function UseMetriSCA()
     }
     UseSpanLite()
     UseSPDLOG()
+    UseIndicators()
 end
 
 -- Build the tests

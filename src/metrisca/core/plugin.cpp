@@ -18,10 +18,17 @@
 #include "metrisca/metrics/score_metric.hpp"
 #include "metrisca/metrics/success_rate_metric.hpp"
 #include "metrisca/metrics/ttest_metric.hpp"
+#include "metrisca/metrics/rank_estimation_metric.hpp"
+#include "metrisca/metrics/key_enumeration_metric.hpp"
 
 #include "metrisca/models/hamming_distance_model.hpp"
 #include "metrisca/models/hamming_weight_model.hpp"
 #include "metrisca/models/identity_model.hpp"
+
+#include "metrisca/scores/score.hpp"
+#include "metrisca/scores/CPA.hpp"
+#include "metrisca/scores/bayesian.hpp"
+#include "metrisca/scores/old_bayesian.hpp"
 
 #include "metrisca/profilers/standard_profiler.hpp"
 
@@ -41,10 +48,16 @@ namespace metrisca {
         METRISCA_REGISTER_PLUGIN(ScoreMetric, "score");
         METRISCA_REGISTER_PLUGIN(SuccessRateMetric, "success_rate");
         METRISCA_REGISTER_PLUGIN(TTestMetric, "ttest");
+        METRISCA_REGISTER_PLUGIN(RankEstimationMetric, "rank_estimation");
+        METRISCA_REGISTER_PLUGIN(KeyEnumerationMetric, "key_enumeration");
 
         METRISCA_REGISTER_PLUGIN(HammingDistanceModel, "hamming_distance");
         METRISCA_REGISTER_PLUGIN(HammingWeightModel, "hamming_weight");
         METRISCA_REGISTER_PLUGIN(IdentityModel, "identity");
+
+        METRISCA_REGISTER_PLUGIN(CPAPlugin, "cpa");
+        METRISCA_REGISTER_PLUGIN(BayesianPlugin, "bayesian");
+        METRISCA_REGISTER_PLUGIN(OldBayesianPlugin, "old_bayesian");
 
         METRISCA_REGISTER_PLUGIN(StandardProfiler, "standard");
     }

@@ -27,6 +27,16 @@ namespace metrisca {
 
         virtual Result<std::vector<std::pair<uint32_t, Matrix<double>>>, Error> Distinguish() = 0;
 
+        inline std::shared_ptr<PowerModelPlugin> GetPowerModel() const 
+        {
+            return m_PowerModel;
+        }
+
+        inline uint32_t GetSampleStart() const
+        {
+            return m_SampleStart;
+        }
+
     protected:
         std::vector<std::pair<uint32_t, Matrix<double>>> InitializeResultMatrices();
 

@@ -522,4 +522,11 @@ namespace metrisca {
         return result;
     }
 
+    void TraceDatasetBuilder::ReserveInternals()
+    {
+        m_Traces.reserve(NumberOfSamples * NumberOfTraces);
+        m_Plaintexts.reserve(PlaintextSize);
+        m_Keys.reserve(KeySize);
+    }
+
 }
